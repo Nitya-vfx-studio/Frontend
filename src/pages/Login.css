@@ -1,0 +1,75 @@
+.login-page {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%; max-width: 420px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 32px;
+  box-shadow: var(--shadow);
+}
+
+.login-logo {
+  text-align: center; margin-bottom: 28px;
+}
+.login-logo-mark {
+  width: 64px; height: 64px;
+  background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.05));
+  border: 1px solid rgba(0,212,255,0.3);
+  border-radius: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 28px; margin-bottom: 16px;
+}
+.login-title {
+  font-size: 22px; font-weight: 800; letter-spacing: -0.5px;
+}
+.login-subtitle {
+  color: var(--muted); font-size: 13px; margin-top: 4px;
+}
+
+/* Role selector */
+.role-drop-wrap { margin-bottom: 20px; }
+.role-drop-wrap label {
+  display: block; font-size: 11px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin-bottom: 6px;
+}
+.role-select {
+  width: 100%; padding: 11px 14px;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 10px; color: var(--text);
+  font-family: var(--font); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: border-color 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235A6278' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.role-select:focus { outline: none; border-color: var(--accent); }
+.role-select option { background: var(--surface); }
+
+.login-role-hint {
+  font-size: 12px; color: var(--muted);
+  margin-bottom: 18px; text-align: center;
+}
+
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+
+.login-divider {
+  display: flex; align-items: center; text-align: center;
+  color: var(--muted); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em; margin: 20px 0 16px;
+}
+.login-divider::before, .login-divider::after {
+  content: ''; flex: 1; border-bottom: 1px solid var(--border2);
+}
+.login-divider:not(:empty)::before { margin-right: 1em; }
+.login-divider:not(:empty)::after { margin-left: 1em; }
+
+.google-btn-container {
+  display: flex; justify-content: center;
+  width: 100%; min-height: 40px;
+}
