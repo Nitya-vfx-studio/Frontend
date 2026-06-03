@@ -5,7 +5,8 @@ import {
   getProject, getShots, createShot, updateShot, deleteShot,
   getShotFiles, uploadShotFile, getShotLogs, createShotLog,
   getOutsource, createOutsource, deleteOutsource, updateOutsource,
-  getUsers, getVersions, createVersion, updateVersion, deleteVersion, getShot
+  getUsers, getVersions, createVersion, updateVersion, deleteVersion, getShot,
+  getThumbnailUploadUrl, confirmThumbnail,
 } from '../api'
 import Modal from '../components/Modal'
 import { DeptBadge, FeedbackBadge, TaskBadge, PipelineTracker } from '../components/StatusBadge'
@@ -296,6 +297,8 @@ export default function ProjectDetail() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const fileRef = useRef()
+  const thumbInputRef = useRef()
+  const pendingThumbShot = useRef(null)
 
   const [project, setProject] = useState(null)
   const [shots, setShots] = useState([])
@@ -366,6 +369,9 @@ export default function ProjectDetail() {
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
   
+  // Thumbnail upload tracking (Set of shot IDs currently being processed)
+  const [uploadingThumbs, setUploadingThumbs] = useState(new Set())
+
   // Correction logs
   const [showAddCorrection, setShowAddCorrection] = useState(false)
   const [corrText, setCorrText] = useState('')
@@ -395,6 +401,82 @@ export default function ProjectDetail() {
   }
 
   useEffect(() => { load() }, [projectId])
+
+  // Warn user if thumbnails are mid-upload and they try to close/navigate away
+  useEffect(() => {
+    const handler = (e) => {
+      if (uploadingThumbs.size > 0) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [uploadingThumbs])
+
+  // ── Thumbnail helpers ──────────────────────────────────────────────────────
+
+  function generateThumbnailBlob(file) {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.muted = true
+      const objectUrl = URL.createObjectURL(file)
+      video.src = objectUrl
+
+      video.onloadedmetadata = () => {
+        video.currentTime = Math.max(video.duration * 0.1, 0.5)
+      }
+
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 640
+        canvas.height = 360
+        const ctx = canvas.getContext('2d')
+        const vw = video.videoWidth || 640
+        const vh = video.videoHeight || 360
+        const scale = Math.min(640 / vw, 360 / vh)
+        const sw = vw * scale
+        const sh = vh * scale
+        ctx.fillStyle = '#000'
+        ctx.fillRect(0, 0, 640, 360)
+        ctx.drawImage(video, (640 - sw) / 2, (360 - sh) / 2, sw, sh)
+        URL.revokeObjectURL(objectUrl)
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Canvas toBlob failed')), 'image/jpeg', 0.85)
+      }
+
+      video.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Video load failed')) }
+    })
+  }
+
+  function handleThumbnailClick(shot) {
+    pendingThumbShot.current = shot
+    thumbInputRef.current.click()
+  }
+
+  async function handleThumbFileSelected(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    const shot = pendingThumbShot.current
+    pendingThumbShot.current = null
+    if (!file || !shot) return
+
+    setUploadingThumbs(prev => new Set([...prev, shot.id]))
+    try {
+      const blob = await generateThumbnailBlob(file)
+      const { data: { upload_url, key } } = await getThumbnailUploadUrl(projectId, shot.id)
+      await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } })
+      await confirmThumbnail(projectId, shot.id, key)
+      // Reload this shot from server to get a fresh signed download URL
+      const { data: updated } = await getShot(projectId, shot.id)
+      setShots(prev => prev.map(s => s.id === shot.id ? updated : s))
+    } catch (err) {
+      console.error('Thumbnail upload failed:', err)
+      setError('Thumbnail upload failed. Please try again.')
+    } finally {
+      setUploadingThumbs(prev => { const n = new Set(prev); n.delete(shot.id); return n })
+    }
+  }
 
   const openAdd = () => {
     setForm(EMPTY_SHOT)
@@ -937,6 +1019,15 @@ export default function ProjectDetail() {
 
   return (
     <div>
+      {/* Hidden file input for thumbnail selection */}
+      <input
+        ref={thumbInputRef}
+        type="file"
+        accept="video/*"
+        style={{ display: 'none' }}
+        onChange={handleThumbFileSelected}
+      />
+
       {/* Breadcrumb */}
       <div className="breadcrumb">
         <Link to="/projects">Projects</Link>
@@ -1052,6 +1143,12 @@ export default function ProjectDetail() {
           </div>
         ))}
       </div>
+      {uploadingThumbs.size > 0 && (
+        <div className="alert" style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: 'var(--yellow)', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: '13px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="spinner" style={{ width: 14, height: 14, borderColor: 'var(--yellow)', borderTopColor: 'transparent' }} />
+          Uploading {uploadingThumbs.size} thumbnail{uploadingThumbs.size > 1 ? 's' : ''} — please don't close this tab.
+        </div>
+      )}
 
       {/* Toolbar Search */}
       <div className="shots-toolbar">
@@ -1080,7 +1177,7 @@ export default function ProjectDetail() {
             <table>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ width: 52 }}></th>
+                  <th style={{ width: 70 }}>Thumb</th>
                   <th>Shot</th>
                   <th>Task</th>
                   <th>Frames</th>
@@ -1104,16 +1201,45 @@ export default function ProjectDetail() {
                       onClick={(e) => handleRowClick(e, shot)} 
                       style={{ cursor: 'pointer', background: isOutsourced ? 'rgba(245,158,11,0.02)' : undefined, borderBottom: '1px solid var(--border)' }}
                     >
-                      <td style={{ padding: '6px 8px', width: 52 }}>
-                        <div
-                          className="shot-thumb"
-                          onClick={e => { e.stopPropagation(); shot.preview_link && setLightboxSrc(shot.preview_link) }}
-                          title={shot.preview_link ? 'Click to preview' : 'No preview'}
-                        >
-                          {shot.preview_link
-                            ? <img src={shot.preview_link} alt={shot.shot_name} className="shot-thumb-img" />
-                            : <span className="shot-thumb-empty">🎞</span>}
-                        </div>
+                      <td style={{ width: 70, padding: '4px 6px' }} onClick={e => e.stopPropagation()}>
+                        {uploadingThumbs.has(shot.id) ? (
+                          <div style={{ width: 64, height: 36, borderRadius: 4, background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span className="spinner" style={{ width: 14, height: 14 }} />
+                          </div>
+                        ) : shot.thumbnail_status === 'done' && shot.thumbnail_url ? (
+                          <div style={{ position: 'relative', width: 64, height: 36 }}>
+                            <img
+                              src={shot.thumbnail_url}
+                              alt={shot.shot_name}
+                              loading="lazy"
+                              onClick={() => shot.preview_link && setLightboxSrc(shot.preview_link)}
+                              style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4, display: 'block', border: '1px solid var(--border)', cursor: shot.preview_link ? 'pointer' : 'default' }}
+                            />
+                            <button
+                              title="Replace thumbnail"
+                              onClick={() => handleThumbnailClick(shot)}
+                              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.55)', borderRadius: 4, border: 'none', cursor: 'pointer', opacity: 0, transition: 'opacity 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}
+                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                              onMouseLeave={e => e.currentTarget.style.opacity = 0}
+                            >🔄</button>
+                          </div>
+                        ) : shot.preview_link ? (
+                          <div
+                            className="shot-thumb"
+                            onClick={() => setLightboxSrc(shot.preview_link)}
+                            title="Click to preview"
+                          >
+                            <img src={shot.preview_link} alt={shot.shot_name} className="shot-thumb-img" />
+                          </div>
+                        ) : (
+                          <button
+                            title="Set thumbnail from local video"
+                            onClick={() => handleThumbnailClick(shot)}
+                            style={{ width: 64, height: 36, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px dashed var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--muted)', transition: 'background 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                          >📷</button>
+                        )}
                       </td>
                       <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
                         <button className="shot-name-link" onClick={(e) => { e.preventDefault(); openDetailsPopup(shot); }}>

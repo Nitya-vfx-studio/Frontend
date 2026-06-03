@@ -85,3 +85,10 @@ export const getShotLogs = (projectId, shotId) =>
 
 export const createShotLog = (projectId, shotId, data) =>
   apiClient.post(`/projects/${projectId}/shots/${shotId}/logs`, data)
+
+// ── Thumbnails ──────────────────────────────────────────────────────────────
+export const getThumbnailUploadUrl = (projectId, shotId) =>
+  apiClient.get(`/projects/${projectId}/shots/${shotId}/thumbnail/upload-url`)
+
+export const confirmThumbnail = (projectId, shotId, thumbnailKey) =>
+  apiClient.patch(`/projects/${projectId}/shots/${shotId}/thumbnail/confirm`, { thumbnail_key: thumbnailKey })
