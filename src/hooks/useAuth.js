@@ -8,7 +8,6 @@ import { AuthContext } from '../contexts/AuthContext'
  *   token: string|null,
  *   isAuthenticated: boolean,
  *   isLoading: boolean,
- *   loginAction: (username, password) => Promise<object>,
  *   logoutAction: () => void,
  *   updateUserAction: (data: object) => void
  * }}

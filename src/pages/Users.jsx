@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUsers, createUser, updateUser, deleteUser } from '../api'
+import { useAuth } from '../hooks/useAuth'
 import Modal from '../components/Modal'
 import { RoleBadge } from '../components/StatusBadge'
 import './Users.css'
 
 const ROLES = ['artist', 'coordinator', 'admin']
 
-const EMPTY_FORM = { username: '', password: '', email: '', role: 'artist', hourly_rate: '', display_name: '' }
+const EMPTY_FORM = { username: '', email: '', role: 'artist', hourly_rate: '', display_name: '' }
 
 export default function Users() {
   const navigate = useNavigate()
@@ -19,10 +20,10 @@ export default function Users() {
   const [editUser, setEditUser]         = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [form, setForm]                 = useState(EMPTY_FORM)
-  const [editForm, setEditForm]         = useState({ role: 'artist', email: '', is_active: true, password: '', hourly_rate: '', display_name: '' })
+  const [editForm, setEditForm]         = useState({ role: 'artist', email: '', is_active: true, hourly_rate: '', display_name: '' })
   const [saving, setSaving]             = useState(false)
 
-  const me = JSON.parse(localStorage.getItem('user') || '{}')
+  const { impersonateAction, user: me } = useAuth()
 
   const load = async () => {
     try {
@@ -60,8 +61,21 @@ export default function Users() {
     }
   }
 
+  const handleImpersonate = async (u) => {
+    try {
+      const target = await impersonateAction(u.id)
+      if (target?.role === 'artist') {
+        navigate('/artist')
+      } else {
+        navigate('/')
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to impersonate user.')
+    }
+  }
+
   const openEdit = (u) => {
-    setEditForm({ role: u.role, email: u.email || '', is_active: u.is_active, password: '', hourly_rate: u.hourly_rate ?? '', display_name: u.display_name || '' })
+    setEditForm({ role: u.role, email: u.email || '', is_active: u.is_active, hourly_rate: u.hourly_rate ?? '', display_name: u.display_name || '' })
     setEditUser(u)
   }
 
@@ -76,7 +90,6 @@ export default function Users() {
         hourly_rate: editForm.hourly_rate !== '' ? parseFloat(editForm.hourly_rate) : null,
         display_name: editForm.display_name || null,
       }
-      if (editForm.password) payload.password = editForm.password
       await updateUser(editUser.id, payload)
       setEditUser(null)
       setSuccess('User updated.')
@@ -155,8 +168,13 @@ export default function Users() {
                   <td className="text-muted">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
                   <td>
                     <div className="row-actions" style={{ opacity: 1 }}>
+                      {u.id !== me?.id && (
+                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--warning)' }} onClick={() => handleImpersonate(u)} title="Login as this user">
+                          👤 Login as
+                        </button>
+                      )}
                       <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>✏ Edit</button>
-                      {u.id !== me.id && (
+                      {u.id !== me?.id && (
                         <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => setDeleteTarget(u)}>🗑</button>
                       )}
                     </div>
@@ -179,16 +197,10 @@ export default function Users() {
                 placeholder="e.g. john_roto" required autoFocus />
             </div>
             <div className="form-group mt-3">
-              <label className="form-label">Password *</label>
-              <input className="form-control" type="password" value={form.password}
-                onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                placeholder="Set initial password" required />
-            </div>
-            <div className="form-group mt-3">
-              <label className="form-label">Email</label>
+              <label className="form-label">Google Email *</label>
               <input className="form-control" type="email" value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="user@nityavfx.com" />
+                placeholder="user@gmail.com" required />
             </div>
             <div className="form-group mt-3">
               <label className="form-label">Role</label>
@@ -260,12 +272,6 @@ export default function Users() {
               <input type="number" className="form-control" value={editForm.hourly_rate}
                 onChange={e => setEditForm(f => ({ ...f, hourly_rate: e.target.value }))}
                 placeholder="e.g. 350" min="0" />
-            </div>
-            <div className="form-group mt-3">
-              <label className="form-label">New Password <span className="text-dim">(leave blank to keep current)</span></label>
-              <input className="form-control" type="password" value={editForm.password}
-                onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))}
-                placeholder="Enter new password…" />
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setEditUser(null)}>Cancel</button>
