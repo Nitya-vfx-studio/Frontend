@@ -30,10 +30,6 @@ export default function ArtistPortal() {
   const [uploading, setUploading] = useState(false)
   const [uploadMsg, setUploadMsg] = useState('')
 
-  // Change password state
-  const [pwForm, setPwForm] = useState({ current: '', new_pw: '', confirm: '' })
-  const [pwMsg, setPwMsg] = useState('')
-
   const today = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
@@ -221,19 +217,6 @@ export default function ArtistPortal() {
     }
   }
 
-  async function changePassword(e) {
-    e.preventDefault()
-    if (pwForm.new_pw !== pwForm.confirm) { setPwMsg('Passwords do not match'); return }
-    try {
-      await updateUser(user.id, { password: pwForm.new_pw })
-      setPwMsg('Password updated!')
-      setPwForm({ current: '', new_pw: '', confirm: '' })
-    } catch {
-      setPwMsg('Failed to update password')
-    }
-    setTimeout(() => setPwMsg(''), 4000)
-  }
-
   const todayLogs = myLogs.filter(l => l.log_date === today)
   const todayTotalMs = todayLogs.reduce((s, l) => s + l.duration_ms, 0)
   const hourlyRate = user.hourly_rate || 0
@@ -406,37 +389,6 @@ export default function ArtistPortal() {
             )}
           </div>
 
-          <div className="section-label">🔑 Change My Password</div>
-          <div className="card">
-            <form onSubmit={changePassword}>
-              <div className="form-group">
-                <label className="form-label">New Password</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={pwForm.new_pw}
-                  onChange={e => setPwForm(f => ({ ...f, new_pw: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="form-group mt-2">
-                <label className="form-label">Confirm New Password</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={pwForm.confirm}
-                  onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
-                  required
-                />
-              </div>
-              {pwMsg && <div style={{ color: pwMsg.includes('fail') || pwMsg.includes('match') ? 'var(--error)' : 'var(--success)', fontSize: '0.8rem', marginTop: 8, fontWeight: 700 }}>{pwMsg}</div>}
-              <div className="modal-footer" style={{ paddingBottom: 0 }}>
-                <button type="submit" className="btn btn-success" style={{ width: '100%' }}>
-                  Update Password
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       </div>
 
