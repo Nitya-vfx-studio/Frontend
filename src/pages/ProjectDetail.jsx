@@ -14,8 +14,8 @@ import './ProjectDetail.css'
 const DEPT_STATUSES = ['Pending', 'WIP', 'Done', 'Approved', 'N/A']
 
 const EMPTY_SHOT = {
-  shot_name: '', sequence: '', frame_count: '',
-  assigned_artist: '', folder_link: '', preview_link: '',
+  shot_name: '', frame_count: '',
+  assigned_artist: '', shot_path: '', drive_link: '',
   status_roto: 'Pending', status_paint: 'Pending',
   status_tracking: 'Pending', status_cg: 'Pending', status_comp: 'Pending',
   est_hours: '', outsourced: false, task_name: '',
@@ -25,15 +25,20 @@ function downloadShotTemplate() {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([
     ['Shot Name', 'Frames', 'Task', 'Est. Hours', 'Assigned To'],
-    ['SH_0010', 120, 'Roto', 8, 'ravi'],
-    ['SH_0020', 240, 'Paint', 12, 'priya'],
-    ['SH_0030', 80, 'Comp', 6, ''],
-    ['SH_0040', 150, '3D', 10, 'sahil'],
-    ['SH_0050', 60, 'Motion', 5, ''],
+    ['SH_0010', 120, 'Roto', 8, ''],
   ])
   ws['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 12 }, { wch: 20 }]
   XLSX.utils.book_append_sheet(wb, ws, 'Shots Template')
-  XLSX.utils.writeFile(wb, 'nitya_vfx_shots_template.xlsx')
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([buf], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'nitya_vfx_shots_template.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 function ArtistSelectDropdown({ selectedArtists, users, onChange }) {
@@ -146,18 +151,140 @@ function ArtistSelectDropdown({ selectedArtists, users, onChange }) {
             ) : (
               filteredUsers.map(u => {
                 const isSelected = selectedArtists.includes(u.username)
+                const roleLabel = u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : ''
                 return (
-                  <div 
+                  <div
                     key={u.username}
                     className={`artist-option ${isSelected ? 'selected' : ''}`}
                     onClick={() => toggleUser(u.username)}
                   >
-                    <span>{u.display_name || u.username} <span style={{ fontSize: '10px', opacity: 0.6 }}>({u.username})</span></span>
+                    <span>
+                      {u.display_name || u.username}
+                      {roleLabel && <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: 4 }}>[{roleLabel}]</span>}
+                    </span>
                     {isSelected && <span>✓</span>}
                   </div>
                 )
               })
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const TASK_OPTIONS = ['Roto', 'Prep', 'Paint', 'Tracking', 'CG', 'Comp', 'DMP', 'FX', 'Other']
+
+const STATUS_COLORS = {
+  Pending:      { bg: 'rgba(100,116,139,0.15)', color: '#94a3b8' },
+  WIP:          { bg: 'rgba(251,191,36,0.15)',  color: '#fbbf24' },
+  Done:         { bg: 'rgba(0,229,160,0.15)',   color: 'var(--green)' },
+  Approved:     { bg: 'rgba(0,212,255,0.15)',   color: 'var(--accent)' },
+  'N/A':        { bg: 'rgba(255,255,255,0.05)', color: 'var(--muted)' },
+  'In-house':   { bg: 'rgba(0,212,255,0.12)',   color: 'var(--accent)' },
+  'Outsourced': { bg: 'rgba(245,158,11,0.15)',  color: 'var(--coord)' },
+}
+
+function StatusSelectDropdown({ value, onChange, options }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef(null)
+  const opts = options ? options.map(o => o.value || o) : DEPT_STATUSES
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) setIsOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const colors = STATUS_COLORS[value] || STATUS_COLORS['Pending']
+
+  return (
+    <div className="artist-select-container" ref={containerRef}>
+      <div className={`artist-select-trigger ${isOpen ? 'active' : ''}`} onClick={() => setIsOpen(!isOpen)}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: colors.bg, color: colors.color, padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700 }}>
+          {value || 'Pending'}
+        </span>
+        <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '10px' }}>▼</span>
+      </div>
+      {isOpen && (
+        <div className="artist-select-dropdown">
+          <div className="artist-select-list">
+            {opts.map(s => {
+              const label = options ? (options.find(o => (o.value || o) === s)?.label || s) : s
+              const c = STATUS_COLORS[s] || {}
+              return (
+                <div key={s} className={`artist-option ${value === s ? 'selected' : ''}`} onClick={() => { onChange(s); setIsOpen(false) }}>
+                  <span style={{ color: c.color, fontWeight: 600 }}>{label}</span>
+                  {value === s && <span>✓</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TaskSelectDropdown({ value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const select = (task) => {
+    onChange(task === value ? '' : task)
+    setIsOpen(false)
+  }
+
+  return (
+    <div className="artist-select-container" ref={containerRef}>
+      <div
+        className={`artist-select-trigger ${isOpen ? 'active' : ''}`}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        {value ? (
+          <span
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              background: 'rgba(168,85,247,0.15)', color: 'var(--purple)',
+              padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700
+            }}
+            onClick={e => { e.stopPropagation(); onChange('') }}
+          >
+            {value}
+            <span style={{ cursor: 'pointer', marginLeft: '2px', fontWeight: 'bold' }}>&times;</span>
+          </span>
+        ) : (
+          <span style={{ color: 'var(--muted)', fontSize: '13px' }}>Task</span>
+        )}
+        <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: '10px' }}>▼</span>
+      </div>
+
+      {isOpen && (
+        <div className="artist-select-dropdown">
+          <div className="artist-select-list">
+            {TASK_OPTIONS.map(task => (
+              <div
+                key={task}
+                className={`artist-option ${value === task ? 'selected' : ''}`}
+                onClick={() => select(task)}
+              >
+                <span>{task}</span>
+                {value === task && <span>✓</span>}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -175,9 +302,16 @@ export default function ProjectDetail() {
   const [outsourceEntries, setOutsourceEntries] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [toasts, setToasts] = useState([])
   const [search, setSearch] = useState('')
+
+  const showToast = (msg, type = 'error') => {
+    const id = Date.now()
+    setToasts(t => [...t, { id, msg, type }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
+  }
+  const setError = msg => msg && showToast(msg, 'error')
+  const setSuccess = msg => msg && showToast(msg, 'success')
 
   const [showAddShot, setShowAddShot] = useState(false)
   const [editShot, setEditShot] = useState(null)
@@ -215,6 +349,9 @@ export default function ProjectDetail() {
   const [quickForm, setQuickForm] = useState({ shot_name: '', task_name: '', frame_count: '', est_hours: '', assigned_artist: '', amount: '', preview_video_data: '', preview_video_name: '' })
 
   // Inline modals
+  const [lightboxSrc, setLightboxSrc] = useState(null) // preview lightbox
+  const [shotFileObj, setShotFileObj] = useState(null)  // local file picked for Drive upload
+
   const [showEditEta, setShowEditEta] = useState(null) // holds shot
   const [etaInput, setEtaInput] = useState('')
   const [showOsCost, setShowOsCost] = useState(null) // holds shot
@@ -268,11 +405,10 @@ export default function ProjectDetail() {
     const outsource = outsourceEntries.find(o => o.shot_id === shot.id)
     setForm({
       shot_name: shot.shot_name,
-      sequence: shot.sequence || '',
       frame_count: shot.frame_count || '',
       assigned_artist: shot.assigned_artist || '',
-      folder_link: shot.folder_link || '',
-      preview_link: shot.preview_link || '',
+      shot_path: shot.folder_link || '',
+      drive_link: shot.preview_link || '',
       status_roto: shot.status_roto,
       status_paint: shot.status_paint,
       status_tracking: shot.status_tracking,
@@ -296,6 +432,8 @@ export default function ProjectDetail() {
         ...form,
         frame_count: form.frame_count ? parseInt(form.frame_count) : null,
         est_hours: form.est_hours ? parseFloat(form.est_hours) : 0,
+        folder_link: form.shot_path || null,
+        preview_link: form.drive_link || null,
       }
       
       let savedShot;
@@ -823,8 +961,8 @@ export default function ProjectDetail() {
             }}>{getProjectMonthRange(project)}</span>
             <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/projects/${projectId}/batches`)}>📦 Batches</button>
             <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/projects/${projectId}/feedback`)}>💬 Feedback</button>
-            <button className="btn btn-secondary btn-sm" style={{ color: 'var(--coord)', borderColor: 'rgba(255,159,67,0.4)' }} onClick={() => setShowImport(true)}>⬆ Import Excel</button>
-            <button className="btn btn-secondary btn-sm" style={{ color: 'var(--green)', borderColor: 'rgba(0,229,160,0.3)' }} onClick={downloadShotTemplate}>⬇ Template</button>
+            <button className="btn btn-secondary btn-sm" style={{ color: 'var(--green)', borderColor: 'rgba(0,229,160,0.3)' }} onClick={() => setShowImport(true)}>⬇ Import Excel</button>
+            <button className="btn btn-secondary btn-sm" style={{ color: 'var(--coord)', borderColor: 'rgba(255,159,67,0.4)' }} onClick={downloadShotTemplate}>⬆ Template</button>
             {canAdmin && <button className="btn btn-primary" onClick={openAdd}>+ Add Shot</button>}
           </div>
         </div>
@@ -877,50 +1015,43 @@ export default function ProjectDetail() {
 
       {/* Inline Quick Add Form (Admins & Coords) */}
       {canAdmin && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '12px', fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-            ⏱ Quick Add Shot to this Project
-          </div>
-          <form onSubmit={handleQuickAdd} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr)) auto', gap: 10, alignItems: 'end' }}>
-            <div className="form-group">
-              <label className="form-label">Shot Name</label>
-              <input className="form-control" value={quickForm.shot_name} onChange={e => setQuickForm(q => ({ ...q, shot_name: e.target.value }))} placeholder="e.g. SH_0060" required />
+        <div className="card quick-add-card" style={{ marginBottom: 20, padding: '10px 14px' }}>
+          <form onSubmit={handleQuickAdd} className="quick-add-form">
+            <span className="quick-add-label">⏱ Quick Add Shot:</span>
+            <input className="form-control quick-add-field" style={{ flex: '2 1 120px' }} value={quickForm.shot_name} onChange={e => setQuickForm(q => ({ ...q, shot_name: e.target.value }))} placeholder="Shot Name" required />
+            <div className="quick-add-field" style={{ flex: '1.5 1 110px' }}>
+              <TaskSelectDropdown value={quickForm.task_name} onChange={val => setQuickForm(q => ({ ...q, task_name: val }))} />
             </div>
-            <div className="form-group">
-              <label className="form-label">Task</label>
-              <input className="form-control" value={quickForm.task_name} onChange={e => setQuickForm(q => ({ ...q, task_name: e.target.value }))} placeholder="Roto / Comp" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Frames</label>
-              <input className="form-control" type="number" value={quickForm.frame_count} onChange={e => setQuickForm(q => ({ ...q, frame_count: e.target.value }))} placeholder="120" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Est. Hours</label>
-              <input className="form-control" type="number" step="0.5" value={quickForm.est_hours} onChange={e => setQuickForm(q => ({ ...q, est_hours: e.target.value }))} placeholder="8" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Outsource Cost (₹)</label>
-              <input className="form-control" type="number" value={quickForm.amount} onChange={e => setQuickForm(q => ({ ...q, amount: e.target.value }))} placeholder="e.g. 15000" min="0" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Shot Video</label>
-              <input className="form-control" type="file" accept="video/*" onChange={handleQuickAddVideoChange} style={{ padding: '6px' }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Assign To</label>
-              <ArtistSelectDropdown 
-                selectedArtists={quickForm.assigned_artist ? quickForm.assigned_artist.split(',').map(a => a.trim()).filter(Boolean) : []} 
-                users={users} 
-                onChange={val => setQuickForm(q => ({ ...q, assigned_artist: val }))} 
+            <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" value={quickForm.frame_count} onChange={e => setQuickForm(q => ({ ...q, frame_count: e.target.value }))} placeholder="Frames" />
+            <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" step="0.5" value={quickForm.est_hours} onChange={e => setQuickForm(q => ({ ...q, est_hours: e.target.value }))} placeholder="Est. Hrs" />
+            <input className="form-control quick-add-field" style={{ flex: '1 1 90px' }} type="number" value={quickForm.amount} onChange={e => setQuickForm(q => ({ ...q, amount: e.target.value }))} placeholder="Cost ₹" min="0" />
+            <label className="quick-add-file-btn quick-add-field quick-add-file" style={{ flex: '1.5 1 120px' }} title={quickForm.preview_video_name || 'Attach video'}>
+              <input type="file" accept="video/*" onChange={handleQuickAddVideoChange} style={{ display: 'none' }} />
+              {quickForm.preview_video_name
+                ? <><span className="quick-add-file-icon">🎬</span><span className="quick-add-file-name">{quickForm.preview_video_name}</span></>
+                : <><span className="quick-add-file-icon">📎</span><span>Attach Video</span></>}
+            </label>
+            <div className="quick-add-field" style={{ flex: '2 1 150px' }}>
+              <ArtistSelectDropdown
+                selectedArtists={quickForm.assigned_artist ? quickForm.assigned_artist.split(',').map(a => a.trim()).filter(Boolean) : []}
+                users={users}
+                onChange={val => setQuickForm(q => ({ ...q, assigned_artist: val }))}
               />
             </div>
-            <button className="btn btn-primary" type="submit" style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Quick Add</button>
+            <button className="quick-add-submit" type="submit">+ Add Shot</button>
           </form>
         </div>
       )}
 
-      {error && <div className="alert alert-error" onClick={() => setError('')}>{error}</div>}
-      {success && <div className="alert alert-success" onClick={() => setSuccess('')}>{success}</div>}
+      {/* Toast notifications */}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type}`} onClick={() => setToasts(ts => ts.filter(x => x.id !== t.id))}>
+            <span>{t.type === 'error' ? '✕' : '✓'}</span>
+            {t.msg}
+          </div>
+        ))}
+      </div>
 
       {/* Toolbar Search */}
       <div className="shots-toolbar">
@@ -949,6 +1080,7 @@ export default function ProjectDetail() {
             <table>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ width: 52 }}></th>
                   <th>Shot</th>
                   <th>Task</th>
                   <th>Frames</th>
@@ -972,6 +1104,17 @@ export default function ProjectDetail() {
                       onClick={(e) => handleRowClick(e, shot)} 
                       style={{ cursor: 'pointer', background: isOutsourced ? 'rgba(245,158,11,0.02)' : undefined, borderBottom: '1px solid var(--border)' }}
                     >
+                      <td style={{ padding: '6px 8px', width: 52 }}>
+                        <div
+                          className="shot-thumb"
+                          onClick={e => { e.stopPropagation(); shot.preview_link && setLightboxSrc(shot.preview_link) }}
+                          title={shot.preview_link ? 'Click to preview' : 'No preview'}
+                        >
+                          {shot.preview_link
+                            ? <img src={shot.preview_link} alt={shot.shot_name} className="shot-thumb-img" />
+                            : <span className="shot-thumb-empty">🎞</span>}
+                        </div>
+                      </td>
                       <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
                         <button className="shot-name-link" onClick={(e) => { e.preventDefault(); openDetailsPopup(shot); }}>
                           {shot.shot_name}
@@ -1031,57 +1174,73 @@ export default function ProjectDetail() {
       {(showAddShot || editShot) && (
         <Modal
           title={editShot ? `Edit ${editShot.shot_name}` : 'Add Shot'}
-          onClose={() => { setShowAddShot(false); setEditShot(null) }}
+          onClose={() => { setShowAddShot(false); setEditShot(null); setShotFileObj(null) }}
           size="modal-lg"
         >
           <form onSubmit={handleSave}>
             <div className="grid-2">
+              {/* Shot Name */}
               <div className="form-group">
                 <label className="form-label">Shot Name *</label>
                 <input className="form-control" value={form.shot_name}
                   onChange={e => setForm(f => ({ ...f, shot_name: e.target.value }))}
                   placeholder="e.g. SH_0010" required autoFocus />
               </div>
-              <div className="form-group">
-                <label className="form-label">Sequence</label>
-                <input className="form-control" value={form.sequence}
-                  onChange={e => setForm(f => ({ ...f, sequence: e.target.value }))}
-                  placeholder="e.g. SEQ_01" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Task Name</label>
-                <input className="form-control" value={form.task_name}
-                  onChange={e => setForm(f => ({ ...f, task_name: e.target.value }))}
-                  placeholder="e.g. Roto / Comp" />
-              </div>
+
+              {/* Frame Count */}
               <div className="form-group">
                 <label className="form-label">Frame Count</label>
                 <input className="form-control" type="number" value={form.frame_count}
                   onChange={e => setForm(f => ({ ...f, frame_count: e.target.value }))}
                   placeholder="e.g. 120" />
               </div>
+
+              {/* Task — custom dropdown + free-type fallback */}
+              <div className="form-group">
+                <label className="form-label">Task</label>
+                <TaskSelectDropdown
+                  value={TASK_OPTIONS.includes(form.task_name) ? form.task_name : (form.task_name ? 'Other' : '')}
+                  onChange={val => setForm(f => ({ ...f, task_name: val === 'Other' ? '' : val }))}
+                />
+                {(!TASK_OPTIONS.filter(t => t !== 'Other').includes(form.task_name)) && (
+                  <input className="form-control" style={{ marginTop: 6 }} value={form.task_name}
+                    onChange={e => setForm(f => ({ ...f, task_name: e.target.value }))}
+                    placeholder="Custom task name…" />
+                )}
+              </div>
+
+              {/* Est. Hours */}
               <div className="form-group">
                 <label className="form-label">Estimated Hours</label>
                 <input className="form-control" type="number" step="0.5" value={form.est_hours}
                   onChange={e => setForm(f => ({ ...f, est_hours: e.target.value }))}
                   placeholder="e.g. 8" />
               </div>
+
+              {/* Assigned Artist */}
               <div className="form-group">
                 <label className="form-label">Assigned Artist</label>
-                <ArtistSelectDropdown 
-                  selectedArtists={form.assigned_artist ? form.assigned_artist.split(',').map(a => a.trim()).filter(Boolean) : []} 
-                  users={users} 
-                  onChange={val => setForm(f => ({ ...f, assigned_artist: val }))} 
+                <ArtistSelectDropdown
+                  selectedArtists={form.assigned_artist ? form.assigned_artist.split(',').map(a => a.trim()).filter(Boolean) : []}
+                  users={users}
+                  onChange={val => setForm(f => ({ ...f, assigned_artist: val }))}
                 />
               </div>
+
+              {/* Assignment Type */}
               <div className="form-group">
                 <label className="form-label">Assignment Type</label>
-                <select className="form-control" value={form.outsourced ? 'outsourced' : 'inhouse'}
-                  onChange={e => setForm(f => ({ ...f, outsourced: e.target.value === 'outsourced' }))}>
-                  <option value="inhouse">🏠 In-house</option>
-                  <option value="outsourced">📤 Outsourced</option>
-                </select>
+                <StatusSelectDropdown
+                  label="Type"
+                  value={form.outsourced ? 'Outsourced' : 'In-house'}
+                  onChange={val => setForm(f => ({ ...f, outsourced: val === 'Outsourced' }))}
+                  options={[
+                    { label: '🏠 In-house', value: 'In-house' },
+                    { label: '📤 Outsourced', value: 'Outsourced' },
+                  ]}
+                />
               </div>
+
               {form.outsourced && (
                 <>
                   <div className="form-group">
@@ -1103,17 +1262,76 @@ export default function ProjectDetail() {
                   </div>
                 </>
               )}
-              <div className="form-group">
-                <label className="form-label">Folder Link</label>
-                <input className="form-control" value={form.folder_link}
-                  onChange={e => setForm(f => ({ ...f, folder_link: e.target.value }))}
-                  placeholder="https://drive.google.com/…" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Preview Link</label>
-                <input className="form-control" value={form.preview_link}
-                  onChange={e => setForm(f => ({ ...f, preview_link: e.target.value }))}
-                  placeholder="https://…/preview.mp4" />
+
+              {/* Shot Path + Drive — full-width combined section */}
+              <div style={{ gridColumn: '1 / -1', border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
+                {/* Shot Path row */}
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--surface)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Shot Path</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      className="form-control"
+                      style={{ flex: 1 }}
+                      value={form.shot_path}
+                      onChange={e => setForm(f => ({ ...f, shot_path: e.target.value }))}
+                      placeholder="/Volumes/Projects/SH_0010.mov"
+                    />
+                    <label className="btn btn-secondary" style={{ whiteSpace: 'nowrap', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      📁 Browse
+                      <input type="file" accept="video/*" style={{ display: 'none' }}
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setShotFileObj(file)
+                            setForm(f => ({ ...f, shot_path: file.name }))
+                          }
+                        }} />
+                    </label>
+                  </div>
+                  {shotFileObj && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span>✓</span>
+                      <span>{shotFileObj.name}</span>
+                      <span style={{ color: 'var(--muted)' }}>({(shotFileObj.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      <button type="button" onClick={() => { setShotFileObj(null); setForm(f => ({ ...f, shot_path: '' })) }}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, marginLeft: 2 }}>✕</button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Google Drive row */}
+                <div style={{ padding: '10px 14px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Google Drive <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontSize: 10 }}>(optional)</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      className="form-control"
+                      style={{ flex: 1 }}
+                      value={form.drive_link}
+                      onChange={e => setForm(f => ({ ...f, drive_link: e.target.value }))}
+                      placeholder="Paste Drive link…"
+                    />
+                    <button
+                      type="button"
+                      disabled={!shotFileObj}
+                      onClick={() => alert('Google Drive upload — coming soon!')}
+                      style={{
+                        padding: '0 16px', borderRadius: 8, border: '1px solid',
+                        fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', cursor: shotFileObj ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.2s',
+                        background: shotFileObj ? 'rgba(66,133,244,0.12)' : 'transparent',
+                        color: shotFileObj ? '#4285f4' : 'var(--muted)',
+                        borderColor: shotFileObj ? 'rgba(66,133,244,0.4)' : 'var(--border2)',
+                      }}
+                    >
+                      ☁ Upload to Drive
+                    </button>
+                  </div>
+                  {!shotFileObj && (
+                    <div style={{ marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>Browse a file above to enable upload</div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1129,22 +1347,33 @@ export default function ProjectDetail() {
               ].map(({ key, label }) => (
                 <div key={key} className="form-group">
                   <label className="form-label">{label}</label>
-                  <select className="form-control" value={form[key]}
-                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}>
-                    {DEPT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <StatusSelectDropdown value={form[key]} onChange={val => setForm(f => ({ ...f, [key]: val }))} />
                 </div>
               ))}
             </div>
 
             <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => { setShowAddShot(false); setEditShot(null) }}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={() => { setShowAddShot(false); setEditShot(null); setShotFileObj(null) }}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? <><span className="spinner" /> Saving…</> : editShot ? 'Save Changes' : 'Add Shot'}
               </button>
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* Preview lightbox */}
+      {lightboxSrc && (
+        <div className="lightbox-overlay" onClick={() => setLightboxSrc(null)}>
+          <div className="lightbox-box" onClick={e => e.stopPropagation()}>
+            <button className="lightbox-close" onClick={() => setLightboxSrc(null)}>✕</button>
+            {lightboxSrc.startsWith('data:video') || lightboxSrc.includes('.mp4') || lightboxSrc.includes('.mov') ? (
+              <video src={lightboxSrc} controls autoPlay className="lightbox-media" />
+            ) : (
+              <img src={lightboxSrc} alt="Preview" className="lightbox-media" />
+            )}
+          </div>
+        </div>
       )}
 
       {/* Delete confirm */}
