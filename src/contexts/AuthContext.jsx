@@ -1,5 +1,5 @@
 import { createContext, useState, useEffect } from 'react'
-import { login as loginApi, googleLogin as googleLoginApi } from '../services/authService'
+import { googleLogin as googleLoginApi, impersonate as impersonateApi } from '../services/authService'
 
 export const AuthContext = createContext(null)
 
@@ -26,25 +26,6 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const loginAction = async (username, password) => {
-    setIsLoading(true)
-    try {
-      const res = await loginApi(username, password)
-      const { access_token, user: userPayload } = res.data
-      
-      localStorage.setItem('token', access_token)
-      localStorage.setItem('user', JSON.stringify(userPayload))
-      
-      setToken(access_token)
-      setUser(userPayload)
-      return userPayload
-    } catch (error) {
-      throw error
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const loginWithGoogleAction = async (idToken) => {
     setIsLoading(true)
     try {
@@ -62,6 +43,26 @@ export function AuthProvider({ children }) {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const impersonateAction = async (userId) => {
+    const res = await impersonateApi(userId)
+    const { access_token, impersonating } = res.data
+    localStorage.setItem('token', access_token)
+    localStorage.setItem('user', JSON.stringify(impersonating))
+    localStorage.setItem('impersonating', '1')
+    setToken(access_token)
+    setUser(impersonating)
+    return impersonating
+  }
+
+  const stopImpersonatingAction = () => {
+    // Logging out of impersonation returns admin to login — they re-auth with Google
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    localStorage.removeItem('impersonating')
+    setToken(null)
+    setUser(null)
   }
 
   const logoutAction = () => {
@@ -83,13 +84,17 @@ export function AuthProvider({ children }) {
 
   const isAuthenticated = !!token && !!user
 
+  const isImpersonating = !!localStorage.getItem('impersonating')
+
   const value = {
     user,
     token,
     isAuthenticated,
     isLoading,
-    loginAction,
+    isImpersonating,
     loginWithGoogleAction,
+    impersonateAction,
+    stopImpersonatingAction,
     logoutAction,
     updateUserAction,
   }

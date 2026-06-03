@@ -1,17 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { ROLES } from '../config/constants'
 import { getAuthConfig } from '../api'
 import './Login.css'
 
 export default function Login() {
-  console.log('API URL:', import.meta.env.VITE_API_URL)
   const navigate = useNavigate()
   const googleBtnRef = useRef(null)
-  const { loginAction, loginWithGoogleAction } = useAuth()
-  const [role, setRole] = useState('admin')
-  const [form, setForm] = useState({ username: '', password: '' })
+  const { loginWithGoogleAction } = useAuth()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleClientId, setGoogleClientId] = useState('')
@@ -56,7 +52,6 @@ export default function Login() {
           client_id: googleClientId,
           callback: handleGoogleLogin,
         })
-
         window.google.accounts.id.renderButton(googleBtnRef.current, {
           theme: 'outline',
           size: 'large',
@@ -78,26 +73,6 @@ export default function Login() {
     }
   }, [googleClientId])
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    try {
-      const userPayload = await loginAction(form.username, form.password)
-      if (userPayload?.role === 'artist') {
-        navigate('/artist')
-      } else {
-        navigate('/')
-      }
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Incorrect credentials. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const selected = ROLES.find(r => r.value === role)
-
   return (
     <div className="login-page">
       <div className="login-card">
@@ -107,63 +82,19 @@ export default function Login() {
           <div className="login-subtitle">Production Management System</div>
         </div>
 
-        <div className="role-drop-wrap">
-          <label>Sign in as</label>
-          <select
-            className="role-select"
-            value={role}
-            onChange={e => { setRole(e.target.value); setError('') }}
-          >
-            {ROLES.map(r => (
-              <option key={r.value} value={r.value}>{r.label}</option>
-            ))}
-          </select>
-        </div>
+        {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {selected && <p className="login-role-hint">{selected.hint}</p>}
-
-        <form onSubmit={handleSubmit} className="login-form">
-          {error && <div className="alert alert-error">{error}</div>}
-
-          <div className="form-group">
-            <label className="form-label">Username</label>
-            <input
-              className="form-control"
-              type="text"
-              placeholder="Enter your username"
-              value={form.username}
-              onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-              autoFocus required
-            />
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+            <span className="spinner" />
           </div>
+        ) : (
+          <div ref={googleBtnRef} className="google-btn-container" />
+        )}
 
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input
-              className="form-control"
-              type="password"
-              placeholder="Enter your password"
-              value={form.password}
-              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}
-            disabled={loading}
-          >
-            {loading ? <><span className="spinner" /> Signing in…</> : `Enter as ${selected?.label}`}
-          </button>
-        </form>
-
-        <div className="login-divider">
-          <span>OR</span>
-        </div>
-
-        <div ref={googleBtnRef} className="google-btn-container" />
+        <p className="text-muted" style={{ textAlign: 'center', fontSize: '0.8rem', marginTop: 20 }}>
+          Sign in with your registered Google account.
+        </p>
       </div>
     </div>
   )
