@@ -297,8 +297,9 @@ export default function ProjectDetail() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const fileRef = useRef()
-  const thumbInputRef = useRef()
-  const pendingThumbShot = useRef(null)
+  const thumbHoverTimer = useRef(null)
+  const [thumbnailModalSrc, setThumbnailModalSrc] = useState(null)
+  const [hoveredThumb, setHoveredThumb] = useState(null) // { url, rect }
 
   const [project, setProject] = useState(null)
   const [shots, setShots] = useState([])
@@ -349,7 +350,7 @@ export default function ProjectDetail() {
   const [importing, setImporting] = useState(false)
 
   // Quick add form
-  const [quickForm, setQuickForm] = useState({ shot_name: '', task_name: '', frame_count: '', est_hours: '', assigned_artist: '', amount: '', preview_video_data: '', preview_video_name: '' })
+  const [quickForm, setQuickForm] = useState({ shot_name: '', task_name: '', frame_count: '', est_hours: '', assigned_artist: '', amount: '', video_file: null, video_file_name: '' })
 
   // Inline modals
   const [lightboxSrc, setLightboxSrc] = useState(null) // preview lightbox
@@ -423,59 +424,50 @@ export default function ProjectDetail() {
       video.muted = true
       const objectUrl = URL.createObjectURL(file)
       video.src = objectUrl
-
-      video.onloadedmetadata = () => {
-        video.currentTime = Math.max(video.duration * 0.1, 0.5)
-      }
-
+      video.onloadedmetadata = () => { video.currentTime = Math.max(video.duration * 0.1, 0.5) }
       video.onseeked = () => {
         const canvas = document.createElement('canvas')
-        canvas.width = 640
-        canvas.height = 360
+        canvas.width = 640; canvas.height = 360
         const ctx = canvas.getContext('2d')
-        const vw = video.videoWidth || 640
-        const vh = video.videoHeight || 360
+        const vw = video.videoWidth || 640, vh = video.videoHeight || 360
         const scale = Math.min(640 / vw, 360 / vh)
-        const sw = vw * scale
-        const sh = vh * scale
+        const sw = vw * scale, sh = vh * scale
         ctx.fillStyle = '#000'
         ctx.fillRect(0, 0, 640, 360)
         ctx.drawImage(video, (640 - sw) / 2, (360 - sh) / 2, sw, sh)
         URL.revokeObjectURL(objectUrl)
-        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Canvas toBlob failed')), 'image/jpeg', 0.85)
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', 0.85)
       }
-
       video.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Video load failed')) }
     })
   }
 
-  function handleThumbnailClick(shot) {
-    pendingThumbShot.current = shot
-    thumbInputRef.current.click()
+  async function processThumbnailForShot(shotId, videoFile) {
+    setUploadingThumbs(prev => new Set([...prev, shotId]))
+    try {
+      const blob = await generateThumbnailBlob(videoFile)
+      const { data: { upload_url, key } } = await getThumbnailUploadUrl(projectId, shotId)
+      await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } })
+      await confirmThumbnail(projectId, shotId, key)
+      const { data: updated } = await getShot(projectId, shotId)
+      setShots(prev => prev.map(s => s.id === shotId ? updated : s))
+    } catch (err) {
+      console.error('Thumbnail generation failed:', err)
+    } finally {
+      setUploadingThumbs(prev => { const n = new Set(prev); n.delete(shotId); return n })
+    }
   }
 
-  async function handleThumbFileSelected(e) {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    const shot = pendingThumbShot.current
-    pendingThumbShot.current = null
-    if (!file || !shot) return
+  function startThumbHoverTimer(url, el) {
+    clearTimeout(thumbHoverTimer.current)
+    thumbHoverTimer.current = setTimeout(() => {
+      setHoveredThumb({ url, rect: el.getBoundingClientRect() })
+    }, 1000)
+  }
 
-    setUploadingThumbs(prev => new Set([...prev, shot.id]))
-    try {
-      const blob = await generateThumbnailBlob(file)
-      const { data: { upload_url, key } } = await getThumbnailUploadUrl(projectId, shot.id)
-      await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } })
-      await confirmThumbnail(projectId, shot.id, key)
-      // Reload this shot from server to get a fresh signed download URL
-      const { data: updated } = await getShot(projectId, shot.id)
-      setShots(prev => prev.map(s => s.id === shot.id ? updated : s))
-    } catch (err) {
-      console.error('Thumbnail upload failed:', err)
-      setError('Thumbnail upload failed. Please try again.')
-    } finally {
-      setUploadingThumbs(prev => { const n = new Set(prev); n.delete(shot.id); return n })
-    }
+  function clearThumbHover() {
+    clearTimeout(thumbHoverTimer.current)
+    setHoveredThumb(null)
   }
 
   const openAdd = () => {
@@ -553,9 +545,12 @@ export default function ProjectDetail() {
         }
       }
 
+      const videoFile = shotFileObj
       setShowAddShot(false)
       setEditShot(null)
+      setShotFileObj(null)
       load()
+      if (videoFile) processThumbnailForShot(savedShot.id, videoFile)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save shot')
     } finally {
@@ -576,15 +571,7 @@ export default function ProjectDetail() {
   const handleQuickAddVideoChange = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setQuickForm(q => ({
-        ...q,
-        preview_video_data: ev.target.result,
-        preview_video_name: file.name
-      }))
-    }
-    reader.readAsDataURL(file)
+    setQuickForm(q => ({ ...q, video_file: file, video_file_name: file.name }))
   }
 
   // Quick Add Shot Form
@@ -605,7 +592,6 @@ export default function ProjectDetail() {
         status_cg: 'Pending',
         status_comp: 'Pending',
         outsourced: outsourced,
-        preview_link: quickForm.preview_video_data || null,
       })
 
       const newShot = res.data
@@ -620,17 +606,10 @@ export default function ProjectDetail() {
         })
       }
 
-      setQuickForm({ 
-        shot_name: '', 
-        task_name: '', 
-        frame_count: '', 
-        est_hours: '', 
-        assigned_artist: '', 
-        amount: '', 
-        preview_video_data: '', 
-        preview_video_name: '' 
-      })
+      const videoFile = quickForm.video_file
+      setQuickForm({ shot_name: '', task_name: '', frame_count: '', est_hours: '', assigned_artist: '', amount: '', video_file: null, video_file_name: '' })
       load()
+      if (videoFile) processThumbnailForShot(newShot.id, videoFile)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to quick add shot')
     }
@@ -1019,15 +998,6 @@ export default function ProjectDetail() {
 
   return (
     <div>
-      {/* Hidden file input for thumbnail selection */}
-      <input
-        ref={thumbInputRef}
-        type="file"
-        accept="video/*"
-        style={{ display: 'none' }}
-        onChange={handleThumbFileSelected}
-      />
-
       {/* Breadcrumb */}
       <div className="breadcrumb">
         <Link to="/projects">Projects</Link>
@@ -1116,11 +1086,11 @@ export default function ProjectDetail() {
             <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" value={quickForm.frame_count} onChange={e => setQuickForm(q => ({ ...q, frame_count: e.target.value }))} placeholder="Frames" />
             <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" step="0.5" value={quickForm.est_hours} onChange={e => setQuickForm(q => ({ ...q, est_hours: e.target.value }))} placeholder="Est. Hrs" />
             <input className="form-control quick-add-field" style={{ flex: '1 1 90px' }} type="number" value={quickForm.amount} onChange={e => setQuickForm(q => ({ ...q, amount: e.target.value }))} placeholder="Cost ₹" min="0" />
-            <label className="quick-add-file-btn quick-add-field quick-add-file" style={{ flex: '1.5 1 120px' }} title={quickForm.preview_video_name || 'Attach video'}>
+            <label className="quick-add-file-btn quick-add-field quick-add-file" style={{ flex: '1.5 1 120px' }} title={quickForm.video_file_name || 'Pick video to generate thumbnail'}>
               <input type="file" accept="video/*" onChange={handleQuickAddVideoChange} style={{ display: 'none' }} />
-              {quickForm.preview_video_name
-                ? <><span className="quick-add-file-icon">🎬</span><span className="quick-add-file-name">{quickForm.preview_video_name}</span></>
-                : <><span className="quick-add-file-icon">📎</span><span>Attach Video</span></>}
+              {quickForm.video_file_name
+                ? <><span className="quick-add-file-icon">🎬</span><span className="quick-add-file-name">{quickForm.video_file_name}</span></>
+                : <><span className="quick-add-file-icon">🖼</span><span>Thumb Video</span></>}
             </label>
             <div className="quick-add-field" style={{ flex: '2 1 150px' }}>
               <ArtistSelectDropdown
@@ -1207,38 +1177,21 @@ export default function ProjectDetail() {
                             <span className="spinner" style={{ width: 14, height: 14 }} />
                           </div>
                         ) : shot.thumbnail_status === 'done' && shot.thumbnail_url ? (
-                          <div style={{ position: 'relative', width: 64, height: 36 }}>
-                            <img
-                              src={shot.thumbnail_url}
-                              alt={shot.shot_name}
-                              loading="lazy"
-                              onClick={() => shot.preview_link && setLightboxSrc(shot.preview_link)}
-                              style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4, display: 'block', border: '1px solid var(--border)', cursor: shot.preview_link ? 'pointer' : 'default' }}
-                            />
-                            <button
-                              title="Replace thumbnail"
-                              onClick={() => handleThumbnailClick(shot)}
-                              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.55)', borderRadius: 4, border: 'none', cursor: 'pointer', opacity: 0, transition: 'opacity 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}
-                              onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                              onMouseLeave={e => e.currentTarget.style.opacity = 0}
-                            >🔄</button>
-                          </div>
+                          <img
+                            src={shot.thumbnail_url}
+                            alt={shot.shot_name}
+                            loading="lazy"
+                            onClick={() => setThumbnailModalSrc(shot.thumbnail_url)}
+                            onMouseEnter={e => startThumbHoverTimer(shot.thumbnail_url, e.currentTarget)}
+                            onMouseLeave={clearThumbHover}
+                            style={{ width: 64, height: 36, objectFit: 'cover', borderRadius: 4, display: 'block', border: '1px solid var(--border)', cursor: 'pointer' }}
+                          />
                         ) : shot.preview_link ? (
-                          <div
-                            className="shot-thumb"
-                            onClick={() => setLightboxSrc(shot.preview_link)}
-                            title="Click to preview"
-                          >
+                          <div className="shot-thumb" onClick={() => setLightboxSrc(shot.preview_link)} title="Click to preview">
                             <img src={shot.preview_link} alt={shot.shot_name} className="shot-thumb-img" />
                           </div>
                         ) : (
-                          <button
-                            title="Set thumbnail from local video"
-                            onClick={() => handleThumbnailClick(shot)}
-                            style={{ width: 64, height: 36, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px dashed var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--muted)', transition: 'background 0.15s' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                          >📷</button>
+                          <div style={{ width: 64, height: 36, borderRadius: 4, background: 'rgba(255,255,255,0.04)', border: '1px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: 'var(--muted)' }}>🎞</div>
                         )}
                       </td>
                       <td style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>
@@ -1499,6 +1452,43 @@ export default function ProjectDetail() {
               <img src={lightboxSrc} alt="Preview" className="lightbox-media" />
             )}
           </div>
+        </div>
+      )}
+
+      {/* Thumbnail click — zoomed view modal */}
+      {thumbnailModalSrc && (
+        <div
+          onClick={() => setThumbnailModalSrc(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, cursor: 'pointer' }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.7)' }}>
+            <button
+              onClick={() => setThumbnailModalSrc(null)}
+              style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 28, height: 28, cursor: 'pointer', color: '#fff', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}
+            >✕</button>
+            <img src={thumbnailModalSrc} alt="Thumbnail" style={{ maxWidth: '72vw', maxHeight: '72vh', display: 'block', borderRadius: 10 }} />
+          </div>
+        </div>
+      )}
+
+      {/* Thumbnail hover — 3 s popover (40 % larger, no modal) */}
+      {hoveredThumb && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.round(hoveredThumb.rect.left + hoveredThumb.rect.width / 2 - (64 * 2) / 2),
+            top: Math.round(hoveredThumb.rect.top - 36 * 2 - 10),
+            width: Math.round(64 * 2),
+            height: Math.round(36 * 2),
+            zIndex: 9998,
+            borderRadius: 6,
+            overflow: 'hidden',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.7)',
+            border: '1px solid var(--border)',
+            pointerEvents: 'none',
+          }}
+        >
+          <img src={hoveredThumb.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         </div>
       )}
 
