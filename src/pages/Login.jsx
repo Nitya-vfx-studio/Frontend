@@ -6,6 +6,7 @@ import { getAuthConfig } from '../api'
 import './Login.css'
 
 export default function Login() {
+  console.log('API URL:', import.meta.env.VITE_API_URL)
   const navigate = useNavigate()
   const googleBtnRef = useRef(null)
   const { loginAction, loginWithGoogleAction } = useAuth()
