@@ -40,6 +40,20 @@ function RequireAuth({ children }) {
   return children
 }
 
+function RequireAdmin({ children }) {
+  const { user, isLoading } = useContext(AuthContext)
+
+  if (isLoading) {
+    return <FullPageSpinner />
+  }
+
+  if (!user || user.role !== 'admin') {
+    return <Navigate to="/" replace />
+  }
+
+  return children
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -61,13 +75,13 @@ export default function App() {
               <Route path="projects/:projectId/shots/:shotId" element={<ShotDetail />} />
               <Route path="projects/:projectId/batches" element={<Batches />} />
               <Route path="projects/:projectId/feedback" element={<FeedbackHistory />} />
-              <Route path="users" element={<Users />} />
+              <Route path="users" element={<RequireAdmin><Users /></RequireAdmin>} />
               <Route path="artist" element={<ArtistPortal />} />
               <Route path="time-logs" element={<TimeLogs />} />
               <Route path="outsource" element={<Outsource />} />
-              <Route path="salary" element={<Salary />} />
-              <Route path="payments" element={<Payments />} />
-              <Route path="invoices" element={<Invoices />} />
+              <Route path="salary" element={<RequireAdmin><Salary /></RequireAdmin>} />
+              <Route path="payments" element={<RequireAdmin><Payments /></RequireAdmin>} />
+              <Route path="invoices" element={<RequireAdmin><Invoices /></RequireAdmin>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

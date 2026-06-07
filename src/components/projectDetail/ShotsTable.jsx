@@ -20,7 +20,7 @@ function getETATag(shot) {
 }
 
 export function ShotsTable({
-  shots, outsourceEntries, canAdmin, uploadingThumbs,
+  shots, outsourceEntries, canAdmin, isOwner, uploadingThumbs,
   onRowClick, onOpenDetails, onOpenFiles, onEdit, onEditEta, onToggleOutsource, onDelete,
   onThumbClick, onThumbHoverStart, onThumbHoverEnd, onPreview,
 }) {
@@ -50,7 +50,7 @@ export function ShotsTable({
               <th>Est. Hrs</th>
               <th>Logged</th>
               <th>ETA</th>
-              {canAdmin && <th>Cost</th>}
+              {isOwner && <th>Cost</th>}
               <th></th>
             </tr>
           </thead>
@@ -113,7 +113,7 @@ export function ShotsTable({
                   <td style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>{shot.est_hours ? `${shot.est_hours}h` : '—'}</td>
                   <td style={{ fontFamily: 'var(--mono)', color: 'var(--coord)' }}>{shot.logged_hours ? `${shot.logged_hours}h` : '—'}</td>
                   <td>{getETATag(shot)}</td>
-                  {canAdmin && (
+                  {isOwner && (
                     <td style={{ fontFamily: 'var(--mono)', color: isOutsourced ? 'var(--outsource)' : 'var(--accent)', fontWeight: 700 }}>
                       {isOutsourced && outsource ? `₹${Math.round(outsource.cost).toLocaleString('en-IN')}` : '—'}
                     </td>

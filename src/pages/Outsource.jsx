@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react'
 import { getOutsource, createOutsource, updateOutsource, deleteOutsource, getProjects, getShots } from '../api'
+import { useAuth } from '../hooks/useAuth'
+import { isOwner } from '../utils/permissions'
 
 const STATUS_OPTIONS = ['Pending', 'Delivered', 'Revision', 'Cancelled']
 const STATUS_CLASS = { Pending: 'badge-warning', Delivered: 'badge-success', Revision: 'badge-danger', Cancelled: 'badge-secondary' }
 
 export default function Outsource() {
+  const { user } = useAuth()
+  const userIsOwner = isOwner(user)
+
   const [entries, setEntries] = useState([])
   const [projects, setProjects] = useState([])
   const [allShots, setAllShots] = useState([])
@@ -88,12 +93,17 @@ export default function Outsource() {
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        {[
-          { lbl: 'Total Cost', val: fmt(totalCost), col: 'var(--warning)' },
-          { lbl: 'Pending', val: fmt(pendingCost), col: 'var(--warning)' },
-          { lbl: 'Delivered', val: fmt(deliveredCost), col: 'var(--success)' },
-          { lbl: 'Entries', val: filtered.length, col: 'var(--accent)' },
-        ].map(s => (
+        {(userIsOwner
+          ? [
+              { lbl: 'Total Cost', val: fmt(totalCost), col: 'var(--warning)' },
+              { lbl: 'Pending', val: fmt(pendingCost), col: 'var(--warning)' },
+              { lbl: 'Delivered', val: fmt(deliveredCost), col: 'var(--success)' },
+              { lbl: 'Entries', val: filtered.length, col: 'var(--accent)' },
+            ]
+          : [
+              { lbl: 'Entries', val: filtered.length, col: 'var(--accent)' },
+            ]
+        ).map(s => (
           <div key={s.lbl} className="card" style={{ padding: '1rem' }}>
             <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', marginBottom: 4 }}>{s.lbl}</div>
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: s.col, fontFamily: 'monospace' }}>{s.val}</div>
@@ -116,10 +126,12 @@ export default function Outsource() {
             <label className="form-label">Vendor / Studio</label>
             <input className="form-control" value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="e.g. VFX House Mumbai" required />
           </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Cost (₹)</label>
-            <input type="number" className="form-control" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="e.g. 25000" min="0" />
-          </div>
+          {userIsOwner && (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Cost (₹)</label>
+              <input type="number" className="form-control" value={form.cost} onChange={e => setForm(f => ({ ...f, cost: e.target.value }))} placeholder="e.g. 25000" min="0" />
+            </div>
+          )}
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label">Delivery Date</label>
             <input type="date" className="form-control" value={form.delivery_date} onChange={e => setForm(f => ({ ...f, delivery_date: e.target.value }))} />
@@ -158,7 +170,10 @@ export default function Outsource() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
-                {['Shot', 'Project', 'Vendor', 'Cost (₹)', 'Delivery', 'Status', ''].map(h => (
+                {(userIsOwner
+                  ? ['Shot', 'Project', 'Vendor', 'Cost (₹)', 'Delivery', 'Status', '']
+                  : ['Shot', 'Project', 'Vendor', 'Delivery', 'Status', '']
+                ).map(h => (
                   <th key={h} style={{ padding: '10px 16px', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)', textAlign: 'left' }}>{h}</th>
                 ))}
               </tr>
@@ -169,7 +184,7 @@ export default function Outsource() {
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontWeight: 700 }}>{e.shot_name}</td>
                   <td style={{ padding: '10px 16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{e.project_name}</td>
                   <td style={{ padding: '10px 16px', fontWeight: 600 }}>{e.vendor}</td>
-                  <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: 'var(--warning)', fontWeight: 700 }}>₹{e.cost?.toLocaleString('en-IN')}</td>
+                  {userIsOwner && <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: 'var(--warning)', fontWeight: 700 }}>₹{e.cost?.toLocaleString('en-IN')}</td>}
                   <td style={{ padding: '10px 16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{e.delivery_date || '—'}</td>
                   <td style={{ padding: '10px 16px' }}>
                     <span className={`badge ${STATUS_CLASS[e.status] || 'badge-secondary'}`}>{e.status}</span>
