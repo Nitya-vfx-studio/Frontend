@@ -77,15 +77,19 @@ export default function Layout() {
               <NavLink to="/outsource" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
                 📤 Outsource
               </NavLink>
-              <NavLink to="/salary" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-                💰 Salary
-              </NavLink>
-              <NavLink to="/payments" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-                💳 Payments
-              </NavLink>
-              <NavLink to="/invoices" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-                🧾 Invoices
-              </NavLink>
+              {userIsOwner && (
+                <>
+                  <NavLink to="/salary" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                    💰 Salary
+                  </NavLink>
+                  <NavLink to="/payments" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                    💳 Payments
+                  </NavLink>
+                  <NavLink to="/invoices" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+                    🧾 Invoices
+                  </NavLink>
+                </>
+              )}
             </>
           )}
         </div>

@@ -3,7 +3,7 @@ import { DeptBadge, FeedbackBadge, TaskBadge } from '../StatusBadge'
 import { DEPT_STATUSES } from '../dropdowns'
 
 export function ShotDetailsModal({
-  shot, outsourceEntries, users, canAdmin,
+  shot, outsourceEntries, users, canAdmin, isOwner,
   detailsVersions, detailsFiles, detailsLogs,
   detailsActiveTab, setDetailsActiveTab,
   showDetailAddVersion, setShowDetailAddVersion,
@@ -25,6 +25,7 @@ export function ShotDetailsModal({
   onScreenshotChange, onDetailSubmitCorrection,
   nextVersionNumber, username,
   onClose,
+  onEdit,
 }) {
   if (!shot) return null
 
@@ -112,7 +113,7 @@ export function ShotDetailsModal({
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6, fontSize: '12px' }}>
                     <div>🏢 <strong>Vendor:</strong> {os.vendor}</div>
-                    <div>💰 <strong>Cost:</strong> <span style={{ color: 'var(--outsource)', fontWeight: 'bold' }}>₹{Math.round(os.cost).toLocaleString('en-IN')}</span></div>
+                    {isOwner && <div>💰 <strong>Cost:</strong> <span style={{ color: 'var(--outsource)', fontWeight: 'bold' }}>₹{Math.round(os.cost).toLocaleString('en-IN')}</span></div>}
                     {os.delivery_date && <div>📅 <strong>Delivery:</strong> {os.delivery_date}</div>}
                   </div>
                 )
@@ -132,6 +133,18 @@ export function ShotDetailsModal({
               <button className="btn btn-secondary btn-sm" style={{ flex: 1, justifyContent: 'center', opacity: 0.5 }} disabled>▶ No Preview</button>
             )}
           </div>
+          {canAdmin && onEdit && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                onEdit(shot)
+                onClose()
+              }}
+              style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
+            >
+              ✏️ Edit Shot Info
+            </button>
+          )}
         </div>
 
         {/* Right Column */}

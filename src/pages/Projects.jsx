@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getProjects, createProject, deleteProject } from '../api'
+import { getProjects, createProject, deleteProject, createShot, getThumbnailUploadUrl, confirmThumbnail } from '../api'
 import Modal from '../components/Modal'
 import { useAuth } from '../hooks/useAuth'
+import { isOwner } from '../utils/permissions'
+import { generateThumbnailBlob } from '../utils/thumbnail'
+import { uploadToStorage } from '../utils/storage'
 import './Projects.css'
 
 const PROJ_STATUS_COLOR = {
@@ -54,34 +57,6 @@ const TYPE_DESC = {
   full: 'Full VFX pipeline',
 }
 
-const DEPT_LABEL = {
-  roto: 'Roto', paint: 'Paint', tracking: 'Track', cg: 'CG', comp: 'Comp',
-}
-
-function DeptBar({ label, data, color }) {
-  const { total, approved, done, wip, pending } = data
-  // Build stacked bar segments as percentages
-  const pct = (n) => total ? Math.round((n / total) * 100) : 0
-  const approvedPct  = pct(approved)
-  const donePct      = pct(done)
-  const wipPct       = pct(wip)
-  const pendingPct   = pct(pending)
-
-  return (
-    <div className="dept-bar-item">
-      <div className="dept-bar-header">
-        <span className="dept-bar-label">{label}</span>
-        <span className="dept-bar-count">{approved}/{total}</span>
-      </div>
-      <div className="dept-bar-track">
-        {approvedPct > 0 && <div className="dept-seg seg-approved" style={{ width: `${approvedPct}%` }} />}
-        {donePct     > 0 && <div className="dept-seg seg-done"     style={{ width: `${donePct}%` }} />}
-        {wipPct      > 0 && <div className="dept-seg seg-wip"      style={{ width: `${wipPct}%` }} />}
-        {pendingPct  > 0 && <div className="dept-seg seg-pending"  style={{ width: `${pendingPct}%` }} />}
-      </div>
-    </div>
-  )
-}
 
 export default function Projects() {
   const navigate = useNavigate()
@@ -92,6 +67,8 @@ export default function Projects() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [form, setForm] = useState({ name: '', project_type: 'full', description: '', client: '', start_date: '', deadline: '', budget: '' })
   const [saving, setSaving] = useState(false)
+  const [folderFiles, setFolderFiles] = useState([])
+  const [progressText, setProgressText] = useState('')
 
   const { user }  = useAuth()
   const canAdmin = ['coordinator', 'admin'].includes(user?.role)
@@ -110,11 +87,24 @@ export default function Projects() {
 
   useEffect(() => { load() }, [])
 
+  const handleFolderChange = (e) => {
+    const files = Array.from(e.target.files || [])
+    const videoExtensions = ['.mp4', '.mov', '.mkv', '.avi', '.webm', '.ogg', '.m4v']
+    const filtered = files.filter(file => {
+      const nameLower = file.name.toLowerCase()
+      const isVideoType = file.type && file.type.startsWith('video/')
+      const hasVideoExt = videoExtensions.some(ext => nameLower.endsWith(ext))
+      return isVideoType || hasVideoExt
+    })
+    setFolderFiles(filtered)
+  }
+
   const handleCreate = async (e) => {
     e.preventDefault()
     setSaving(true)
+    setProgressText(folderFiles.length > 0 ? 'Creating project...' : '')
     try {
-      await createProject({
+      const res = await createProject({
         ...form,
         budget: form.budget ? parseFloat(form.budget) : null,
         start_date: form.start_date || null,
@@ -122,13 +112,54 @@ export default function Projects() {
         client: form.client || null,
         proj_status: 'Active',
       })
+
+      const newProject = res.data
+
+      if (folderFiles.length > 0) {
+        for (let i = 0; i < folderFiles.length; i++) {
+          const file = folderFiles[i]
+          const idx = file.name.lastIndexOf('.')
+          const shotName = idx === -1 ? file.name : file.name.substring(0, idx)
+
+          setProgressText(`Creating shot ${i + 1}/${folderFiles.length}: ${shotName}...`)
+
+          try {
+            // 1. Create shot
+            const shotRes = await createShot(newProject.id, {
+              shot_name: shotName,
+              frame_count: null,
+              est_hours: 0,
+              status_roto: 'Pending',
+              status_paint: 'Pending',
+              status_tracking: 'Pending',
+              status_cg: 'Pending',
+              status_comp: 'Pending',
+            })
+            const newShotId = shotRes.data.id
+
+            // 2. Generate and upload thumbnail
+            setProgressText(`Generating thumbnail ${i + 1}/${folderFiles.length}: ${shotName}...`)
+            const blob = await generateThumbnailBlob(file)
+
+            setProgressText(`Uploading thumbnail ${i + 1}/${folderFiles.length}: ${shotName}...`)
+            const key = await uploadToStorage(blob, () => getThumbnailUploadUrl(newProject.id, newShotId))
+            await confirmThumbnail(newProject.id, newShotId, key)
+          } catch (shotErr) {
+            console.error(`Failed to generate/upload thumbnail for shot ${shotName}:`, shotErr)
+          }
+        }
+      }
+
       setShowCreate(false)
       setForm({ name: '', project_type: 'full', description: '', client: '', start_date: '', deadline: '', budget: '' })
+      setFolderFiles([])
+      setProgressText('')
       load()
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to create project')
     } finally {
       setSaving(false)
+      setProgressText('')
     }
   }
 
@@ -175,11 +206,6 @@ export default function Projects() {
           {projects.map(p => {
             const color    = TYPE_COLOR[p.project_type]
             const monthRange = getProjectMonthRange(p)
-            const depts    = p.dept_progress || {}
-            const hasDepts = Object.keys(depts).length > 0
-            const approvalPct = p.shot_count > 0
-              ? Math.round((p.approved_shots / p.shot_count) * 100)
-              : 0
 
             const dl = daysLeft(p.deadline)
             const dlStr = dl === null ? null : dl > 0 ? `${dl}d left` : `${Math.abs(dl)}d overdue`
@@ -231,20 +257,13 @@ export default function Projects() {
 
                   {/* Row 2b: client */}
                   {p.client && (
-                    <p className="pc-desc" style={{ marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      🏢 {p.client}
-                      <span style={{
-                        color: 'var(--accent)', fontSize: '10px', fontWeight: 700, fontFamily: 'var(--mono)',
-                        background: 'rgba(0,212,255,0.08)', padding: '1px 6px', borderRadius: 10,
-                        border: '1px solid rgba(0,212,255,0.2)'
-                      }}>{monthRange}</span>
-                    </p>
+                    <div className="pc-client-row">
+                      <span className="pc-client-prefix">CLIENT</span>
+                      <span className="pc-client-val">{p.client}</span>
+                      <span className="pc-month-tag">{monthRange}</span>
+                    </div>
                   )}
 
-                  {/* Row 3: description or pipeline hint */}
-                  <p className="pc-desc">
-                    {p.description || TYPE_DESC[p.project_type]}
-                  </p>
 
                   {/* Row 4: stats grid */}
                   <div className="pc-stats-grid">
@@ -268,41 +287,9 @@ export default function Projects() {
                     </div>
                   </div>
 
-                  {/* Row 5: overall completion bar */}
-                  {p.shot_count > 0 && (
-                    <div className="pc-completion">
-                      <div className="pc-completion-header">
-                        <span className="pc-completion-label">Overall completion</span>
-                        <span className="pc-completion-pct">{approvalPct}%</span>
-                      </div>
-                      <div className="pc-completion-track">
-                        <div
-                          className="pc-completion-fill"
-                          style={{ width: `${approvalPct}%`, background: color }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Row 6: per-dept progress bars */}
-                  {hasDepts && (
-                    <div className="pc-depts">
-                      <div className="pc-depts-title">Pipeline</div>
-                      <div className="pc-dept-bars">
-                        {Object.entries(depts).map(([dept, data]) => (
-                          <DeptBar
-                              key={dept}
-                              label={DEPT_LABEL[dept] || dept}
-                              data={data}
-                              color={color}
-                            />
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Row 6b: Admin cost breakdown bar */}
-                  {canAdmin && (
+                  {isOwner(user) && (
                     <div style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border)',
@@ -343,7 +330,7 @@ export default function Projects() {
                         <>📅 {new Date(p.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</>
                       )}
                     </span>
-                    {p.budget > 0 && (
+                    {isOwner(user) && p.budget > 0 && (
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                         Budget: ₹{p.budget.toLocaleString('en-IN')}
                       </span>
@@ -361,7 +348,7 @@ export default function Projects() {
 
       {/* ── Create Modal ── */}
       {showCreate && (
-        <Modal title="New Project" onClose={() => setShowCreate(false)}>
+        <Modal title="New Project" onClose={() => { if (!saving) setShowCreate(false) }}>
           <form onSubmit={handleCreate}>
             <div className="form-group">
               <label className="form-label">Project Name *</label>
@@ -371,6 +358,7 @@ export default function Projects() {
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="e.g. Feature Film VFX S1"
                 required autoFocus
+                disabled={saving}
               />
             </div>
             <div className="form-group mt-3">
@@ -380,6 +368,7 @@ export default function Projects() {
                 value={form.client}
                 onChange={e => setForm(f => ({ ...f, client: e.target.value }))}
                 placeholder="e.g. Netflix India"
+                disabled={saving}
               />
             </div>
             <div className="form-group mt-3">
@@ -388,6 +377,7 @@ export default function Projects() {
                 className="form-control"
                 value={form.project_type}
                 onChange={e => setForm(f => ({ ...f, project_type: e.target.value }))}
+                disabled={saving}
               >
                 {PROJECT_TYPES.map(t => (
                   <option key={t} value={t}>
@@ -399,24 +389,66 @@ export default function Projects() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }} className="mt-3">
               <div className="form-group">
                 <label className="form-label">Start Date</label>
-                <input type="date" className="form-control" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+                <input type="date" className="form-control" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} disabled={saving} />
               </div>
               <div className="form-group">
                 <label className="form-label">Deadline</label>
-                <input type="date" className="form-control" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+                <input type="date" className="form-control" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} disabled={saving} />
               </div>
             </div>
+            {isOwner(user) && (
+              <div className="form-group mt-3">
+                <label className="form-label">Budget (₹) — optional</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={form.budget}
+                  onChange={e => setForm(f => ({ ...f, budget: e.target.value }))}
+                  placeholder="e.g. 500000"
+                  min="0"
+                  disabled={saving}
+                />
+              </div>
+            )}
+            
+            {/* Import Shots Folder */}
             <div className="form-group mt-3">
-              <label className="form-label">Budget (₹) — optional</label>
-              <input
-                type="number"
-                className="form-control"
-                value={form.budget}
-                onChange={e => setForm(f => ({ ...f, budget: e.target.value }))}
-                placeholder="e.g. 500000"
-                min="0"
-              />
+              <label className="form-label">Import Shots Folder (Optional)</label>
+              <div className="project-folder-picker" style={{ border: '2px dashed var(--border2)', borderRadius: '8px', padding: '16px', textAlign: 'center', background: 'rgba(255,255,255,0.01)', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+                <input
+                  type="file"
+                  webkitdirectory="true"
+                  directory="true"
+                  multiple
+                  disabled={saving}
+                  style={{ position: 'absolute', inset: 0, opacity: 0, cursor: saving ? 'not-allowed' : 'pointer' }}
+                  onChange={handleFolderChange}
+                />
+                <div style={{ fontSize: '20px' }}>📁</div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text)' }}>
+                  {folderFiles.length > 0 ? 'Change selected folder' : 'Choose local project folder'}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--muted)' }}>
+                  Will auto-create shots & generate thumbnails from video files inside
+                </div>
+              </div>
+              {folderFiles.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 8, marginTop: 6 }}>
+                  <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
+                    ✓ {folderFiles.length} video shot{folderFiles.length !== 1 ? 's' : ''} detected
+                  </div>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => setFolderFiles([])}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 11 }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </div>
+
             <div className="form-group mt-3">
               <label className="form-label">Description</label>
               <textarea
@@ -425,10 +457,20 @@ export default function Projects() {
                 value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="Optional notes about this project…"
+                disabled={saving}
               />
             </div>
+
+            {saving && progressText && (
+              <div style={{ background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 8, padding: '12px', marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent)' }}>Importing Directory</div>
+                <div style={{ fontSize: '11px', color: 'var(--text)' }}>{progressText}</div>
+                <div className="spinner" style={{ width: 14, height: 14, marginTop: 4 }} />
+              </div>
+            )}
+
             <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCreate(false)} disabled={saving}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saving}>
                 {saving ? <><span className="spinner" /> Creating…</> : 'Create Project'}
               </button>

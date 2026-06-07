@@ -12,10 +12,12 @@ import Modal from '../components/Modal'
 import { ArtistSelectDropdown, StatusSelectDropdown, TaskSelectDropdown, DEPT_STATUSES, TASK_OPTIONS } from '../components/dropdowns'
 import { useAuth } from '../hooks/useAuth'
 import { useUsers } from '../hooks/useUsers'
+import { isOwner } from '../utils/permissions'
 import { generateThumbnailBlob } from '../utils/thumbnail'
 import { downloadShotTemplate, parseShotsWorkbook } from '../utils/shotTemplate'
 import { uploadToStorage } from '../utils/storage'
 import { ShotsTable } from '../components/projectDetail/ShotsTable'
+import { ShotsGrid } from '../components/projectDetail/ShotsGrid'
 import { AddEditShotModal } from '../components/projectDetail/AddEditShotModal'
 import { ImportShotsModal } from '../components/projectDetail/ImportShotsModal'
 import { FilesCorrectionsModal } from '../components/projectDetail/FilesCorrectionsModal'
@@ -47,6 +49,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true)
   const [toasts, setToasts] = useState([])
   const [search, setSearch] = useState('')
+  const [viewMode, setViewMode] = useState('grid')
 
   const showToast = (msg, type = 'error') => {
     const id = Date.now()
@@ -212,12 +215,26 @@ export default function ProjectDetail() {
     e.preventDefault()
     setSaving(true)
     try {
+      const videoFile = shotFileObj
+      let finalPreviewLink = form.drive_link || null
+
+      if (form.upload_to_drive) {
+        if (!videoFile) {
+          setError('Please select/browse a local video file to upload to Drive.')
+          setSaving(false)
+          return
+        }
+        // Simulate upload delay
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        finalPreviewLink = `https://drive.google.com/file/d/mock_${Math.random().toString(36).substring(2, 10)}/view`
+      }
+
       const payload = {
         ...form,
         frame_count: form.frame_count ? parseInt(form.frame_count) : null,
         est_hours: form.est_hours ? parseFloat(form.est_hours) : 0,
         folder_link: form.shot_path || null,
-        preview_link: form.drive_link || null,
+        preview_link: finalPreviewLink,
       }
       
       let savedShot;
@@ -255,7 +272,6 @@ export default function ProjectDetail() {
         }
       }
 
-      const videoFile = shotFileObj
       setShowAddShot(false)
       setEditShot(null)
       setShotFileObj(null)
@@ -333,6 +349,17 @@ export default function ProjectDetail() {
       setShowEditEta(null)
       load()
     } catch {}
+  }
+
+  // Inline status update
+  const handleUpdateStatus = async (shotId, field, value) => {
+    try {
+      await updateShot(projectId, shotId, { [field]: value })
+      load()
+      setSuccess('Status updated successfully')
+    } catch (err) {
+      setError('Failed to update status')
+    }
   }
 
   // Outsource cost entry submit
@@ -751,7 +778,7 @@ export default function ProjectDetail() {
             <div className="lbl">Deadline</div>
             <div className="val" style={{ color: dlCol, fontSize: '1.2rem' }}>{dlStr}</div>
           </div>
-          {canAdmin && (
+          {isOwner(user) && (
             <>
               <div className="stat-box">
                 <div className="lbl">In-house Spent</div>
@@ -798,7 +825,9 @@ export default function ProjectDetail() {
             </div>
             <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" value={quickForm.frame_count} onChange={e => setQuickForm(q => ({ ...q, frame_count: e.target.value }))} placeholder="Frames" />
             <input className="form-control quick-add-field" style={{ flex: '1 1 80px' }} type="number" step="0.5" value={quickForm.est_hours} onChange={e => setQuickForm(q => ({ ...q, est_hours: e.target.value }))} placeholder="Est. Hrs" />
-            <input className="form-control quick-add-field" style={{ flex: '1 1 90px' }} type="number" value={quickForm.amount} onChange={e => setQuickForm(q => ({ ...q, amount: e.target.value }))} placeholder="Cost ₹" min="0" />
+            {isOwner(user) && (
+              <input className="form-control quick-add-field" style={{ flex: '1 1 90px' }} type="number" value={quickForm.amount} onChange={e => setQuickForm(q => ({ ...q, amount: e.target.value }))} placeholder="Cost ₹" min="0" />
+            )}
             <label className="quick-add-file-btn quick-add-field quick-add-file" style={{ flex: '1.5 1 120px' }} title={quickForm.video_file_name || 'Pick video to generate thumbnail'}>
               <input type="file" accept="video/*" onChange={handleQuickAddVideoChange} style={{ display: 'none' }} />
               {quickForm.video_file_name
@@ -833,38 +862,72 @@ export default function ProjectDetail() {
         </div>
       )}
 
-      {/* Toolbar Search */}
-      <div className="shots-toolbar">
-        <input
-          className="form-control"
-          style={{ maxWidth: 320 }}
-          placeholder="Search shots, tasks, artists…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <span className="text-dim" style={{ fontSize: '0.8rem' }}>
-          {filtered.length} of {shots.length} shots shown
-        </span>
+      {/* Toolbar Search & View Mode Toggle */}
+      <div className="shots-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <input
+            className="form-control"
+            style={{ maxWidth: 320 }}
+            placeholder="Search shots, tasks, artists…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <span className="text-dim" style={{ fontSize: '0.8rem' }}>
+            {filtered.length} of {shots.length} shots shown
+          </span>
+        </div>
+        
+        <div className="toggle-btn-group">
+          <button
+            className={`toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+            onClick={() => setViewMode('grid')}
+            title="Grid View (Cards)"
+          >
+            🖼 Cards
+          </button>
+          <button
+            className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+            onClick={() => setViewMode('list')}
+            title="List View (Table)"
+          >
+            📋 List
+          </button>
+        </div>
       </div>
 
-      {/* Upgraded Table List */}
-      <ShotsTable
-        shots={filtered}
-        outsourceEntries={outsourceEntries}
-        canAdmin={canAdmin}
-        uploadingThumbs={uploadingThumbs}
-        onRowClick={handleRowClick}
-        onOpenDetails={openDetailsPopup}
-        onOpenFiles={openFilesModal}
-        onEdit={openEdit}
-        onEditEta={(shot) => { setEtaInput(shot.est_hours || ''); setShowEditEta(shot) }}
-        onToggleOutsource={toggleOutsourceStatus}
-        onDelete={setDeleteTarget}
-        onThumbClick={setThumbnailModalSrc}
-        onThumbHoverStart={startThumbHoverTimer}
-        onThumbHoverEnd={clearThumbHover}
-        onPreview={setLightboxSrc}
-      />
+      {/* Conditionally Render ShotsGrid or ShotsTable */}
+      {viewMode === 'grid' ? (
+        <ShotsGrid
+          shots={filtered}
+          canAdmin={canAdmin}
+          onUpdateStatus={handleUpdateStatus}
+          onOpenDetails={openDetailsPopup}
+          uploadingThumbs={uploadingThumbs}
+          onThumbClick={setThumbnailModalSrc}
+          onThumbHoverStart={startThumbHoverTimer}
+          onThumbHoverEnd={clearThumbHover}
+          onPreview={setLightboxSrc}
+        />
+      ) : (
+        <ShotsTable
+          shots={filtered}
+          outsourceEntries={outsourceEntries}
+          canAdmin={canAdmin}
+          isOwner={isOwner(user)}
+          uploadingThumbs={uploadingThumbs}
+          onRowClick={handleRowClick}
+          onOpenDetails={openDetailsPopup}
+          onOpenFiles={openFilesModal}
+          onEdit={openEdit}
+          onEditEta={(shot) => { setEtaInput(shot.est_hours || ''); setShowEditEta(shot) }}
+          onToggleOutsource={toggleOutsourceStatus}
+          onDelete={setDeleteTarget}
+          onThumbClick={setThumbnailModalSrc}
+          onThumbHoverStart={startThumbHoverTimer}
+          onThumbHoverEnd={clearThumbHover}
+          onPreview={setLightboxSrc}
+        />
+      )}
 
 
       <AddEditShotModal
@@ -876,6 +939,7 @@ export default function ProjectDetail() {
         shotFileObj={shotFileObj}
         setShotFileObj={setShotFileObj}
         users={users}
+        isOwner={isOwner(user)}
         onSave={handleSave}
         onClose={() => { setShowAddShot(false); setEditShot(null); setShotFileObj(null) }}
       />
@@ -966,10 +1030,12 @@ export default function ProjectDetail() {
             <label className="form-label">Vendor Name *</label>
             <input className="form-control" value={osForm.vendor} onChange={e => setOsForm(o => ({ ...o, vendor: e.target.value }))} placeholder="VFX Vendor Studio" required />
           </div>
-          <div className="form-group mt-3">
-            <label className="form-label">Outsource Cost (₹) *</label>
-            <input className="form-control" type="number" value={osForm.cost} onChange={e => setOsForm(o => ({ ...o, cost: e.target.value }))} placeholder="e.g. 25000" min="0" required />
-          </div>
+          {isOwner(user) && (
+            <div className="form-group mt-3">
+              <label className="form-label">Outsource Cost (₹) *</label>
+              <input className="form-control" type="number" value={osForm.cost} onChange={e => setOsForm(o => ({ ...o, cost: e.target.value }))} placeholder="e.g. 25000" min="0" required />
+            </div>
+          )}
           <div className="form-group mt-3">
             <label className="form-label">Delivery Date</label>
             <input className="form-control" type="date" value={osForm.delivery_date} onChange={e => setOsForm(o => ({ ...o, delivery_date: e.target.value }))} />
@@ -1020,6 +1086,7 @@ export default function ProjectDetail() {
         outsourceEntries={outsourceEntries}
         users={users}
         canAdmin={canAdmin}
+        isOwner={isOwner(user)}
         detailsVersions={detailsVersions}
         detailsFiles={detailsFiles}
         detailsLogs={detailsLogs}
@@ -1060,6 +1127,7 @@ export default function ProjectDetail() {
         onDetailSubmitCorrection={handleDetailSubmitCorrection}
         nextVersionNumber={nextDetailVersionNumber}
         username={user?.username}
+        onEdit={openEdit}
         onClose={() => setSelectedDetailsShot(null)}
       />
 

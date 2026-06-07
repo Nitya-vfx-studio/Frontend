@@ -1,7 +1,18 @@
+import { useState, useEffect } from 'react'
 import Modal from '../Modal'
 import { ArtistSelectDropdown, StatusSelectDropdown, TaskSelectDropdown, TASK_OPTIONS } from '../dropdowns'
 
-export function AddEditShotModal({ show, editShot, form, setForm, saving, shotFileObj, setShotFileObj, users, onSave, onClose }) {
+export function AddEditShotModal({ show, editShot, form, setForm, saving, shotFileObj, setShotFileObj, users, isOwner, onSave, onClose }) {
+  const [haveDriveLink, setHaveDriveLink] = useState(false)
+
+  useEffect(() => {
+    if (form.drive_link) {
+      setHaveDriveLink(true)
+    } else {
+      setHaveDriveLink(false)
+    }
+  }, [form.drive_link, show, editShot])
+
   if (!show && !editShot) return null
 
   return (
@@ -75,12 +86,14 @@ export function AddEditShotModal({ show, editShot, form, setForm, saving, shotFi
                   onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))}
                   placeholder="e.g. VFX Vendor" required />
               </div>
-              <div className="form-group">
-                <label className="form-label">Outsource Cost (₹) *</label>
-                <input className="form-control" type="number" value={form.cost || ''}
-                  onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
-                  placeholder="e.g. 15000" min="0" required />
-              </div>
+              {isOwner && (
+                <div className="form-group">
+                  <label className="form-label">Outsource Cost (₹) *</label>
+                  <input className="form-control" type="number" value={form.cost || ''}
+                    onChange={e => setForm(f => ({ ...f, cost: e.target.value }))}
+                    placeholder="e.g. 15000" min="0" required />
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Delivery Date</label>
                 <input className="form-control" type="date" value={form.delivery_date || ''}
@@ -89,46 +102,140 @@ export function AddEditShotModal({ show, editShot, form, setForm, saving, shotFi
             </>
           )}
 
-          <div style={{ gridColumn: '1 / -1', border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--surface)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Shot Path</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="form-control" style={{ flex: 1 }} value={form.shot_path}
-                  onChange={e => setForm(f => ({ ...f, shot_path: e.target.value }))}
-                  placeholder="/Volumes/Projects/SH_0010.mov" />
-                <label className="btn btn-secondary" style={{ whiteSpace: 'nowrap', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  📁 Browse
-                  <input type="file" accept="video/*" style={{ display: 'none' }}
+          <div className="media-setup-panel">
+            <div className="media-setup-title">
+              🎬 Video & Previews (Optional)
+            </div>
+
+            <div className="media-setup-grid">
+              {/* Part 1: Local Video File (for Thumbnail Generation) */}
+              <div className="media-upload-card">
+                <label className="form-label" style={{ fontSize: 10 }}>Local Video File (Generates Thumbnail)</label>
+                <div className="media-dragzone">
+                  <input type="file" accept="video/*" style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
                     onChange={e => {
                       const file = e.target.files?.[0]
-                      if (file) { setShotFileObj(file); setForm(f => ({ ...f, shot_path: file.name })) }
+                      if (file) {
+                        setShotFileObj(file);
+                      }
                     }} />
-                </label>
-              </div>
-              {shotFileObj && (
-                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span>✓</span><span>{shotFileObj.name}</span>
-                  <span style={{ color: 'var(--muted)' }}>({(shotFileObj.size / 1024 / 1024).toFixed(1)} MB)</span>
-                  <button type="button" onClick={() => { setShotFileObj(null); setForm(f => ({ ...f, shot_path: '' })) }}
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, marginLeft: 2 }}>✕</button>
+                  <div className="media-dragzone-icon">💻</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>Browse or drag local video</div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>For browser-side thumbnail preview</div>
                 </div>
-              )}
-            </div>
-            <div style={{ padding: '10px 14px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                Google Drive <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontSize: 10 }}>(optional)</span>
+
+                {shotFileObj && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, marginTop: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                      <span style={{ color: 'var(--green)', fontSize: 13 }}>✓</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }} title={shotFileObj.name}>{shotFileObj.name}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{(shotFileObj.size / 1024 / 1024).toFixed(1)} MB</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShotFileObj(null);
+                        setForm(f => ({ ...f, upload_to_drive: false }));
+                      }}
+                      style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: '2px' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="form-control" style={{ flex: 1 }} value={form.drive_link}
-                  onChange={e => setForm(f => ({ ...f, drive_link: e.target.value }))}
-                  placeholder="Paste Drive link…" />
-                <button type="button" disabled={!shotFileObj}
-                  onClick={() => alert('Google Drive upload — coming soon!')}
-                  style={{ padding: '0 16px', borderRadius: 8, border: '1px solid', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', cursor: shotFileObj ? 'pointer' : 'not-allowed', transition: 'all 0.2s', background: shotFileObj ? 'rgba(66,133,244,0.12)' : 'transparent', color: shotFileObj ? '#4285f4' : 'var(--muted)', borderColor: shotFileObj ? 'rgba(66,133,244,0.4)' : 'var(--border2)' }}>
-                  ☁ Upload to Drive
-                </button>
+
+              {/* Part 2: Cloud Preview */}
+              <div className="media-cloud-card">
+                <label className="form-label" style={{ fontSize: 10, marginBottom: 2 }}>Cloud Sharing (Google Drive)</label>
+                
+                {/* Switch-Type Toggles */}
+                <div className="media-toggle-row">
+                  <label className="switch-container">
+                    <div className="switch-label-group">
+                      <span className="switch-title">Upload to drive</span>
+                      <span className="switch-desc">Auto-upload video preview on save</span>
+                    </div>
+                    <div style={{ position: 'relative', height: 24 }}>
+                      <input
+                        type="checkbox"
+                        className="switch-input"
+                        checked={form.upload_to_drive || false}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setForm(f => ({
+                            ...f,
+                            upload_to_drive: checked,
+                            drive_link: checked ? '' : f.drive_link
+                          }));
+                          if (checked) {
+                            setHaveDriveLink(false);
+                          }
+                        }}
+                      />
+                      <span className="switch-slider"></span>
+                    </div>
+                  </label>
+
+                  <label className="switch-container">
+                    <div className="switch-label-group">
+                      <span className="switch-title">Have a drive link</span>
+                      <span className="switch-desc">Paste Google Drive sharing URL</span>
+                    </div>
+                    <div style={{ position: 'relative', height: 24 }}>
+                      <input
+                        type="checkbox"
+                        className="switch-input"
+                        checked={haveDriveLink}
+                        onChange={e => {
+                          const checked = e.target.checked;
+                          setHaveDriveLink(checked);
+                          if (checked) {
+                            setForm(f => ({
+                              ...f,
+                              upload_to_drive: false
+                            }));
+                          } else {
+                            setForm(f => ({
+                              ...f,
+                              drive_link: ''
+                            }));
+                          }
+                        }}
+                      />
+                      <span className="switch-slider"></span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Warning/Helper Information */}
+                {form.upload_to_drive && !shotFileObj && (
+                  <span style={{ fontSize: 10, color: 'var(--yellow)', display: 'block', fontWeight: 600 }}>
+                    ⚠️ Please select/browse a local video file to upload.
+                  </span>
+                )}
+
+                {/* Conditionally Render Google Drive link input */}
+                {haveDriveLink && (
+                  <div style={{ marginTop: 2 }}>
+                    <input
+                      className="form-control"
+                      value={form.drive_link || ''}
+                      onChange={e => setForm(f => ({ ...f, drive_link: e.target.value }))}
+                      placeholder="Paste Google Drive URL..."
+                      style={{ padding: '8px 12px', fontSize: '13px' }}
+                    />
+                  </div>
+                )}
+
+                {form.upload_to_drive && shotFileObj && (
+                  <div style={{ fontSize: 10, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                    <span>✓</span> <span>Staged local video will be uploaded to Drive upon saving.</span>
+                  </div>
+                )}
               </div>
-              {!shotFileObj && <div style={{ marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>Browse a file above to enable upload</div>}
             </div>
           </div>
         </div>
