@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getProject, getShots, getBatches, createBatch, updateBatch, deleteBatch } from '../api'
 import Modal from '../components/Modal'
+import { useAuth } from '../hooks/useAuth'
 import './Batches.css'
 
 const EMPTY_FORM = {
@@ -21,8 +22,8 @@ export default function Batches() {
   const [form, setForm]               = useState(EMPTY_FORM)
   const [saving, setSaving]           = useState(false)
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}')
-  const canAdmin = ['coordinator', 'admin'].includes(user.role)
+  const { user } = useAuth()
+  const canAdmin = ['coordinator', 'admin'].includes(user?.role)
 
   const load = async () => {
     try {

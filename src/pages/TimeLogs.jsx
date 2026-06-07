@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getTimeLogs, getUsers } from '../api'
+import { getTimeLogs } from '../api'
+import { useUsers } from '../hooks/useUsers'
 
 function msToHM(ms) {
   const s = Math.floor(ms / 1000)
@@ -29,21 +30,14 @@ function exportCSV(logs) {
 
 export default function TimeLogs() {
   const [logs, setLogs] = useState([])
-  const [users, setUsers] = useState([])
+  const { users: allUsers } = useUsers()
+  const users = allUsers.filter(u => u.role === 'artist')
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({ user_id: '', date_from: '', date_to: '' })
 
   useEffect(() => {
-    loadUsers()
     loadLogs()
   }, [])
-
-  async function loadUsers() {
-    try {
-      const res = await getUsers()
-      setUsers(res.data.filter(u => u.role === 'artist'))
-    } catch {}
-  }
 
   async function loadLogs() {
     setLoading(true)

@@ -16,5 +16,15 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    build: {
+      // Split long-lived vendor code into its own chunk so app updates don't bust its cache.
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          },
+        },
+      },
+    },
   }
 })

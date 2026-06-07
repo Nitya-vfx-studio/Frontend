@@ -92,3 +92,19 @@ export const getThumbnailUploadUrl = (projectId, shotId) =>
 
 export const confirmThumbnail = (projectId, shotId, thumbnailKey) =>
   apiClient.patch(`/projects/${projectId}/shots/${shotId}/thumbnail/confirm`, { thumbnail_key: thumbnailKey })
+
+// ── Presigned uploads (object storage) ───────────────────────────────────────
+export const getShotFileUploadUrl = (projectId, shotId, filename, contentType) =>
+  apiClient.get(`/projects/${projectId}/shots/${shotId}/files/upload-url`, {
+    params: { filename, content_type: contentType },
+  })
+
+export const getLogScreenshotUploadUrl = (projectId, shotId, filename, contentType) =>
+  apiClient.get(`/projects/${projectId}/shots/${shotId}/logs/screenshot-upload-url`, {
+    params: { filename, content_type: contentType },
+  })
+
+export const getFeedbackImageUploadUrl = (projectId, shotId, versionId, filename, contentType) =>
+  apiClient.get(`/projects/${projectId}/shots/${shotId}/versions/${versionId}/feedback-upload-url`, {
+    params: { filename, content_type: contentType },
+  })

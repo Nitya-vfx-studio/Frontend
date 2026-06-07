@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getTimeLogs, getUsers, getProjects } from '../api'
+import { getTimeLogs, getProjects } from '../api'
+import { useUsers } from '../hooks/useUsers'
 
 function msToHM(ms) {
   const s = Math.floor(ms / 1000)
@@ -21,7 +22,7 @@ function exportCSV(rows) {
 }
 
 export default function Salary() {
-  const [users, setUsers] = useState([])
+  const { users } = useUsers()
   const [projects, setProjects] = useState([])
   const [filters, setFilters] = useState({ date_from: '', date_to: '', project_id: '' })
   const [report, setReport] = useState([]) // per-artist array
@@ -30,12 +31,7 @@ export default function Salary() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    async function init() {
-      const [ur, pr] = await Promise.all([getUsers(), getProjects()])
-      setUsers(ur.data)
-      setProjects(pr.data)
-    }
-    init()
+    getProjects().then(pr => setProjects(pr.data)).catch(() => {})
   }, [])
 
   async function calculate(e) {

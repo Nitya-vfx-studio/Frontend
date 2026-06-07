@@ -22,15 +22,15 @@ export default function Outsource() {
       const [projRes, entRes] = await Promise.all([getProjects(), getOutsource({})])
       setProjects(projRes.data)
       setEntries(entRes.data)
-      // Load shots for the dropdown
-      const shots = []
-      for (const p of projRes.data) {
-        try {
-          const { data } = await getShots(p.id)
-          shots.push(...data.map(s => ({ ...s, project_name: p.name })))
-        } catch {}
-      }
-      setAllShots(shots)
+      // Load shots for the dropdown — fetch every project's shots in parallel, not sequentially.
+      const shotsByProject = await Promise.all(
+        projRes.data.map(p =>
+          getShots(p.id)
+            .then(({ data }) => data.map(s => ({ ...s, project_name: p.name })))
+            .catch(() => [])
+        )
+      )
+      setAllShots(shotsByProject.flat())
     } catch {}
     setLoading(false)
   }
