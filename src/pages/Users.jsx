@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getUsers, createUser, updateUser, deleteUser } from '../api'
 import { useAuth } from '../hooks/useAuth'
+import { invalidateUsers } from '../hooks/useUsers'
 import Modal from '../components/Modal'
 import { RoleBadge } from '../components/StatusBadge'
 import './Users.css'
@@ -27,6 +28,7 @@ export default function Users() {
 
   const load = async () => {
     try {
+      invalidateUsers()  // drop the shared cache so other pages refetch the latest roster
       const res = await getUsers()
       setUsers(res.data)
     } catch (err) {

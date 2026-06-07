@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getProjects, createProject, deleteProject } from '../api'
 import Modal from '../components/Modal'
+import { useAuth } from '../hooks/useAuth'
 import './Projects.css'
 
 const PROJ_STATUS_COLOR = {
@@ -92,8 +93,8 @@ export default function Projects() {
   const [form, setForm] = useState({ name: '', project_type: 'full', description: '', client: '', start_date: '', deadline: '', budget: '' })
   const [saving, setSaving] = useState(false)
 
-  const user     = JSON.parse(localStorage.getItem('user') || '{}')
-  const canAdmin = ['coordinator', 'admin'].includes(user.role)
+  const { user }  = useAuth()
+  const canAdmin = ['coordinator', 'admin'].includes(user?.role)
 
   const load = async () => {
     try {

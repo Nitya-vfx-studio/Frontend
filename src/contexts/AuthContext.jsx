@@ -38,8 +38,6 @@ export function AuthProvider({ children }) {
       setToken(access_token)
       setUser(userPayload)
       return userPayload
-    } catch (error) {
-      throw error
     } finally {
       setIsLoading(false)
     }

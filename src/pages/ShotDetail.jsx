@@ -6,6 +6,7 @@ import {
 } from '../api'
 import Modal from '../components/Modal'
 import { DeptBadge, FeedbackBadge, TaskBadge, PipelineTracker } from '../components/StatusBadge'
+import { useAuth } from '../hooks/useAuth'
 import './ShotDetail.css'
 
 const DEPT_STATUSES   = ['Pending', 'WIP', 'Done', 'Approved', 'N/A']
@@ -51,9 +52,9 @@ export default function ShotDetail() {
   // Delete version
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  const user     = JSON.parse(localStorage.getItem('user') || '{}')
-  const canAdmin = ['coordinator', 'admin'].includes(user.role)
-  const canEdit  = canAdmin || (shot && shot.assigned_artist === user.username)
+  const { user }  = useAuth()
+  const canAdmin = ['coordinator', 'admin'].includes(user?.role)
+  const canEdit  = canAdmin || (shot && shot.assigned_artist === user?.username)
 
   const load = async () => {
     try {
@@ -108,7 +109,7 @@ export default function ShotDetail() {
       await createVersion(projectId, shotId, {
         ...versionForm,
         date_sent: versionForm.date_sent || null,
-        artist_name: versionForm.artist_name || user.username,
+        artist_name: versionForm.artist_name || user?.username,
       })
       setShowAddVersion(false)
       setVersionForm(EMPTY_VERSION)
@@ -352,7 +353,7 @@ export default function ShotDetail() {
                 <label className="form-label">Artist Name</label>
                 <input className="form-control" value={versionForm.artist_name}
                   onChange={e => setVersionForm(f => ({ ...f, artist_name: e.target.value }))}
-                  placeholder={user.username} />
+                  placeholder={user?.username} />
               </div>
               <div className="form-group">
                 <label className="form-label">Batch Reference</label>
